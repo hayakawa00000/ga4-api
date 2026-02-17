@@ -8,21 +8,20 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# 環境変数からサービスアカウント情報を取得
+# 環境変数から設定を取得
 SERVICE_ACCOUNT_JSON = os.environ.get('SERVICE_ACCOUNT_JSON')
+DEFAULT_PROPERTY_ID = os.environ.get('GA4_PROPERTY_ID')  # デフォルトのプロパティID
 
 @app.route('/')
 def home():
     return jsonify({
         "status": "GA4 API is running",
+        "default_property_id": DEFAULT_PROPERTY_ID,
         "endpoints": {
             "/ga4/sessions": "Get sessions data",
             "/health": "Health check"
         },
-        "usage": {
-            "basic": "/ga4/sessions?property_id=123456789",
-            "with_dates": "/ga4/sessions?property_id=123456789&start_date=2024-01-01&end_date=2024-01-31"
-        }
+        "usage": "/ga4/sessions?start_date=2024-01-01&end_date=2024-01-31"
     })
 
 @app.route('/health')
@@ -33,18 +32,18 @@ def health():
 def get_sessions():
     try:
         # URLパラメータを取得
-        property_id = request.args.get('property_id')
-        start_date = request.args.get('start_date', '7daysAgo')  # デフォルト: 7日前
-        end_date = request.args.get('end_date', 'today')  # デフォルト: 今日
+        property_id = request.args.get('property_id', DEFAULT_PROPERTY_ID)  # 指定なければデフォルト
+        start_date = request.args.get('start_date', '7daysAgo')
+        end_date = request.args.get('end_date', 'today')
         
+        # プロパティIDのチェック
         if not property_id:
             return jsonify({
                 "success": False,
-                "error": "property_id パラメータが必要です",
-                "usage": "/ga4/sessions?property_id=123456789&start_date=2024-01-01&end_date=2024-01-31"
-            }), 400
+                "error": "GA4_PROPERTY_ID 環境変数が設定されていません"
+            }), 500
         
-        # 日付フォーマットの検証（YYYY-MM-DD形式の場合）
+        # 日付フォーマットの検証
         if start_date not in ['7daysAgo', '30daysAgo', 'yesterday', 'today']:
             try:
                 datetime.strptime(start_date, '%Y-%m-%d')
@@ -119,8 +118,7 @@ def get_sessions():
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": str(e),
-            "property_id": property_id if 'property_id' in locals() else None
+            "error": str(e)
         }), 500
 
 if __name__ == '__main__':
