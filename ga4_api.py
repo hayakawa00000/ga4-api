@@ -27,8 +27,8 @@ def home():
         "endpoints": {
             "/ga4/sessions": "Get GA4 sessions data only",
             "/ga4/comprehensive": "Get comprehensive GA4 data",
-            "/gsc/queries": "Get Search Console queries data",
-            "/gsc/pages": "Get Search Console pages data",
+            "/gsc/queries": "Get Search Console queries data with summary",
+            "/gsc/pages": "Get Search Console pages data with summary",
             "/health": "Health check"
         },
         "usage": {
@@ -403,25 +403,54 @@ def get_gsc_queries():
         # Search Console API
         service = build('searchconsole', 'v1', credentials=creds)
         
-        request_body = {
+        # 1. 全体サマリーを取得（ディメンションなし）
+        summary_request = {
+            'startDate': start_date,
+            'endDate': end_date
+        }
+        
+        summary_response = service.searchanalytics().query(
+            siteUrl=site_url,
+            body=summary_request
+        ).execute()
+        
+        # 全体の合計値を取得
+        if summary_response.get('rows'):
+            summary_row = summary_response['rows'][0]
+            summary = {
+                'total_clicks': summary_row['clicks'],
+                'total_impressions': summary_row['impressions'],
+                'average_ctr': round(summary_row['ctr'] * 100, 2),
+                'average_position': round(summary_row['position'], 1)
+            }
+        else:
+            summary = {
+                'total_clicks': 0,
+                'total_impressions': 0,
+                'average_ctr': 0,
+                'average_position': 0
+            }
+        
+        # 2. クエリ別の詳細データを取得
+        detail_request = {
             'startDate': start_date,
             'endDate': end_date,
             'dimensions': ['query'],
             'rowLimit': limit
         }
         
-        response = service.searchanalytics().query(
+        detail_response = service.searchanalytics().query(
             siteUrl=site_url,
-            body=request_body
+            body=detail_request
         ).execute()
         
         queries = []
-        for row in response.get('rows', []):
+        for row in detail_response.get('rows', []):
             queries.append({
                 'query': row['keys'][0],
                 'clicks': row['clicks'],
                 'impressions': row['impressions'],
-                'ctr': round(row['ctr'] * 100, 2),  # パーセント表示
+                'ctr': round(row['ctr'] * 100, 2),
                 'position': round(row['position'], 1)
             })
         
@@ -430,9 +459,10 @@ def get_gsc_queries():
             "site_url": site_url,
             "start_date": start_date,
             "end_date": end_date,
+            "summary": summary,
             "query_count": len(queries),
             "queries": queries,
-            "message": f"{site_url} の検索クエリデータ（上位{len(queries)}件）"
+            "message": f"{site_url} の検索データ（全体サマリー + 上位{len(queries)}件の詳細）"
         })
     
     except Exception as e:
@@ -486,20 +516,48 @@ def get_gsc_pages():
         # Search Console API
         service = build('searchconsole', 'v1', credentials=creds)
         
-        request_body = {
+        # 1. 全体サマリーを取得
+        summary_request = {
+            'startDate': start_date,
+            'endDate': end_date
+        }
+        
+        summary_response = service.searchanalytics().query(
+            siteUrl=site_url,
+            body=summary_request
+        ).execute()
+        
+        if summary_response.get('rows'):
+            summary_row = summary_response['rows'][0]
+            summary = {
+                'total_clicks': summary_row['clicks'],
+                'total_impressions': summary_row['impressions'],
+                'average_ctr': round(summary_row['ctr'] * 100, 2),
+                'average_position': round(summary_row['position'], 1)
+            }
+        else:
+            summary = {
+                'total_clicks': 0,
+                'total_impressions': 0,
+                'average_ctr': 0,
+                'average_position': 0
+            }
+        
+        # 2. ページ別の詳細データを取得
+        detail_request = {
             'startDate': start_date,
             'endDate': end_date,
             'dimensions': ['page'],
             'rowLimit': limit
         }
         
-        response = service.searchanalytics().query(
+        detail_response = service.searchanalytics().query(
             siteUrl=site_url,
-            body=request_body
+            body=detail_request
         ).execute()
         
         pages = []
-        for row in response.get('rows', []):
+        for row in detail_response.get('rows', []):
             pages.append({
                 'page': row['keys'][0],
                 'clicks': row['clicks'],
@@ -513,9 +571,10 @@ def get_gsc_pages():
             "site_url": site_url,
             "start_date": start_date,
             "end_date": end_date,
+            "summary": summary,
             "page_count": len(pages),
             "pages": pages,
-            "message": f"{site_url} のページ別データ（上位{len(pages)}件）"
+            "message": f"{site_url} のページ別データ（全体サマリー + 上位{len(pages)}件の詳細）"
         })
     
     except Exception as e:
