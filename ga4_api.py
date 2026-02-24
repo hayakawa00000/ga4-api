@@ -586,6 +586,49 @@ def get_google_ads_keywords():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/google-ads/debug')
+def debug_google_ads():
+    try:
+        customer_id = request.args.get('customer_id')
+        
+        # まずトークン取得を確認
+        token_response = http_requests.post('https://oauth2.googleapis.com/token', data={
+            'client_id': GOOGLE_ADS_CLIENT_ID,
+            'client_secret': GOOGLE_ADS_CLIENT_SECRET,
+            'refresh_token': GOOGLE_ADS_REFRESH_TOKEN,
+            'grant_type': 'refresh_token'
+        })
+        
+        token_data = token_response.json()
+        access_token = token_data.get('access_token')
+        
+        if not access_token:
+            return jsonify({
+                "step": "token_failed",
+                "token_response": token_data
+            })
+        
+        # APIリクエストを確認
+        url = f"https://googleads.googleapis.com/v17/customers/{customer_id}/googleAds:search"
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'developer-token': GOOGLE_ADS_DEVELOPER_TOKEN,
+            'login-customer-id': customer_id,
+            'Content-Type': 'application/json'
+        }
+        
+        api_response = http_requests.post(url, headers=headers, json={
+            'query': 'SELECT campaign.name FROM campaign LIMIT 1'
+        })
+        
+        return jsonify({
+            "step": "api_called",
+            "status_code": api_response.status_code,
+            "response_text": api_response.text[:500]
+        })
+    
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
