@@ -34,7 +34,7 @@ def get_ads_access_token():
 
 def query_google_ads(customer_id, query):
     access_token = get_ads_access_token()
-    url = f"https://googleads.googleapis.com/v17/customers/{customer_id}/googleAds:search"
+    url = f"https://googleads.googleapis.com/v15/customers/{customer_id}/googleAds:search"
     headers = {
         'Authorization': f'Bearer {access_token}',
         'developer-token': GOOGLE_ADS_DEVELOPER_TOKEN,
