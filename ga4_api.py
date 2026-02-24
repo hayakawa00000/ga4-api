@@ -34,7 +34,6 @@ def get_ads_access_token():
 
 def query_google_ads(customer_id, query):
     access_token = get_ads_access_token()
-    # v14で試す
     url = f"https://googleads.googleapis.com/v14/customers/{customer_id}/googleAds:search"
     headers = {
         'Authorization': f'Bearer {access_token}',
@@ -283,6 +282,108 @@ def get_comprehensive():
             "cities": cities,
             "landing_pages": landing_pages,
             "events": events
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/ga4/monthly')
+def get_monthly():
+    try:
+        property_id = request.args.get('property_id', DEFAULT_PROPERTY_ID)
+        start_date = request.args.get('start_date', '2025-01-01')
+        end_date = request.args.get('end_date', '2025-03-31')
+
+        if not property_id:
+            return jsonify({"success": False, "error": "GA4_PROPERTY_ID が設定されていません"}), 500
+        if not SERVICE_ACCOUNT_JSON:
+            return jsonify({"success": False, "error": "SERVICE_ACCOUNT_JSON が設定されていません"}), 500
+
+        service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=['https://www.googleapis.com/auth/analytics.readonly']
+        )
+        client = BetaAnalyticsDataClient(credentials=credentials)
+
+        # 月別サマリー
+        monthly_response = client.run_report(RunReportRequest(
+            property=f"properties/{property_id}",
+            date_ranges=[{"start_date": start_date, "end_date": end_date}],
+            dimensions=[{"name": "yearMonth"}],
+            metrics=[
+                {"name": "sessions"}, {"name": "activeUsers"},
+                {"name": "screenPageViews"}, {"name": "bounceRate"},
+                {"name": "averageSessionDuration"}, {"name": "keyEvents"}
+            ],
+            order_bys=[{"dimension": {"dimension_name": "yearMonth"}, "desc": False}]
+        ))
+        monthly_summary = []
+        for row in monthly_response.rows:
+            ym = row.dimension_values[0].value  # "202501"
+            monthly_summary.append({
+                "year_month": f"{ym[:4]}-{ym[4:]}",
+                "sessions": int(row.metric_values[0].value),
+                "active_users": int(row.metric_values[1].value),
+                "pageviews": int(row.metric_values[2].value),
+                "bounce_rate": round(float(row.metric_values[3].value), 4),
+                "average_session_duration": round(float(row.metric_values[4].value), 1),
+                "key_events": int(row.metric_values[5].value)
+            })
+
+        # 月別×流入元
+        source_response = client.run_report(RunReportRequest(
+            property=f"properties/{property_id}",
+            date_ranges=[{"start_date": start_date, "end_date": end_date}],
+            dimensions=[{"name": "yearMonth"}, {"name": "sessionSource"}, {"name": "sessionMedium"}],
+            metrics=[{"name": "sessions"}, {"name": "activeUsers"}],
+            order_bys=[
+                {"dimension": {"dimension_name": "yearMonth"}, "desc": False},
+                {"metric": {"metric_name": "sessions"}, "desc": True}
+            ],
+            limit=100
+        ))
+        monthly_sources = []
+        for row in source_response.rows:
+            ym = row.dimension_values[0].value
+            monthly_sources.append({
+                "year_month": f"{ym[:4]}-{ym[4:]}",
+                "source": row.dimension_values[1].value,
+                "medium": row.dimension_values[2].value,
+                "sessions": int(row.metric_values[0].value),
+                "users": int(row.metric_values[1].value)
+            })
+
+        # 月別×都市
+        city_response = client.run_report(RunReportRequest(
+            property=f"properties/{property_id}",
+            date_ranges=[{"start_date": start_date, "end_date": end_date}],
+            dimensions=[{"name": "yearMonth"}, {"name": "city"}],
+            metrics=[{"name": "sessions"}, {"name": "activeUsers"}],
+            order_bys=[
+                {"dimension": {"dimension_name": "yearMonth"}, "desc": False},
+                {"metric": {"metric_name": "sessions"}, "desc": True}
+            ],
+            limit=100
+        ))
+        monthly_cities = []
+        for row in city_response.rows:
+            ym = row.dimension_values[0].value
+            monthly_cities.append({
+                "year_month": f"{ym[:4]}-{ym[4:]}",
+                "city": row.dimension_values[1].value,
+                "sessions": int(row.metric_values[0].value),
+                "users": int(row.metric_values[1].value)
+            })
+
+        return jsonify({
+            "success": True,
+            "property_id": property_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            "monthly_summary": monthly_summary,
+            "monthly_sources": monthly_sources,
+            "monthly_cities": monthly_cities
         })
 
     except Exception as e:
