@@ -364,7 +364,7 @@ def get_monthly():
                 {"dimension": {"dimension_name": "yearMonth"}, "desc": False},
                 {"metric": {"metric_name": "sessions"}, "desc": True}
             ],
-            limit=200
+            limit=500
         ))
         monthly_cities = []
         for row in city_response.rows:
