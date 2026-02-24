@@ -4,6 +4,7 @@ from google.analytics.data_v1beta.types import RunReportRequest
 from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from google.ads.googleads.client import GoogleAdsClient
 import os
 import json
 from datetime import datetime
@@ -19,23 +20,41 @@ GSC_REFRESH_TOKEN = os.environ.get('GSC_REFRESH_TOKEN')
 GSC_CLIENT_ID = os.environ.get('GSC_CLIENT_ID')
 GSC_CLIENT_SECRET = os.environ.get('GSC_CLIENT_SECRET')
 
+# Google広告用
+GOOGLE_ADS_REFRESH_TOKEN = os.environ.get('GOOGLE_ADS_REFRESH_TOKEN')
+GOOGLE_ADS_CLIENT_ID = os.environ.get('GOOGLE_ADS_CLIENT_ID')
+GOOGLE_ADS_CLIENT_SECRET = os.environ.get('GOOGLE_ADS_CLIENT_SECRET')
+GOOGLE_ADS_DEVELOPER_TOKEN = os.environ.get('GOOGLE_ADS_DEVELOPER_TOKEN')
+
+def get_google_ads_client():
+    """Google広告クライアントを作成"""
+    credentials = Credentials(
+        token=None,
+        refresh_token=GOOGLE_ADS_REFRESH_TOKEN,
+        token_uri='https://oauth2.googleapis.com/token',
+        client_id=GOOGLE_ADS_CLIENT_ID,
+        client_secret=GOOGLE_ADS_CLIENT_SECRET,
+        scopes=['https://www.googleapis.com/auth/adwords']
+    )
+    
+    return GoogleAdsClient(
+        credentials=credentials,
+        developer_token=GOOGLE_ADS_DEVELOPER_TOKEN,
+        use_proto_plus=True
+    )
+
 @app.route('/')
 def home():
     return jsonify({
-        "status": "GA4 & GSC API is running",
-        "default_property_id": DEFAULT_PROPERTY_ID,
+        "status": "GA4 & GSC & Google Ads API is running",
         "endpoints": {
-            "/ga4/sessions": "Get GA4 sessions data only",
-            "/ga4/comprehensive": "Get comprehensive GA4 data",
-            "/gsc/queries": "Get Search Console queries data with summary",
-            "/gsc/pages": "Get Search Console pages data with summary",
-            "/health": "Health check"
-        },
-        "usage": {
-            "ga4_sessions": "/ga4/sessions?start_date=2024-01-01&end_date=2024-01-31",
-            "ga4_comprehensive": "/ga4/comprehensive?start_date=2024-01-01&end_date=2024-01-31",
-            "gsc_queries": "/gsc/queries?site_url=https://your-site.com&start_date=2024-01-01&end_date=2024-01-31",
-            "gsc_pages": "/gsc/pages?site_url=https://your-site.com&start_date=2024-01-01&end_date=2024-01-31"
+            "/ga4/sessions": "GA4セッションデータ",
+            "/ga4/comprehensive": "GA4包括データ",
+            "/gsc/queries": "サーチコンソール検索クエリ",
+            "/gsc/pages": "サーチコンソールページ別",
+            "/google-ads/campaigns": "Google広告キャンペーン別",
+            "/google-ads/keywords": "Google広告キーワード別",
+            "/health": "ヘルスチェック"
         }
     })
 
@@ -51,34 +70,22 @@ def get_sessions():
         end_date = request.args.get('end_date', 'today')
         
         if not property_id:
-            return jsonify({
-                "success": False,
-                "error": "GA4_PROPERTY_ID 環境変数が設定されていません"
-            }), 500
+            return jsonify({"success": False, "error": "GA4_PROPERTY_ID 環境変数が設定されていません"}), 500
         
         if start_date not in ['7daysAgo', '30daysAgo', 'yesterday', 'today']:
             try:
                 datetime.strptime(start_date, '%Y-%m-%d')
             except ValueError:
-                return jsonify({
-                    "success": False,
-                    "error": "start_date は YYYY-MM-DD 形式で指定してください（例: 2024-01-01）"
-                }), 400
+                return jsonify({"success": False, "error": "start_date は YYYY-MM-DD 形式で指定してください"}), 400
         
         if end_date not in ['today', 'yesterday']:
             try:
                 datetime.strptime(end_date, '%Y-%m-%d')
             except ValueError:
-                return jsonify({
-                    "success": False,
-                    "error": "end_date は YYYY-MM-DD 形式で指定してください（例: 2024-01-31）"
-                }), 400
+                return jsonify({"success": False, "error": "end_date は YYYY-MM-DD 形式で指定してください"}), 400
         
         if not SERVICE_ACCOUNT_JSON:
-            return jsonify({
-                "success": False,
-                "error": "SERVICE_ACCOUNT_JSON が設定されていません"
-            }), 500
+            return jsonify({"success": False, "error": "SERVICE_ACCOUNT_JSON が設定されていません"}), 500
         
         service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
         credentials = service_account.Credentials.from_service_account_info(
@@ -87,16 +94,11 @@ def get_sessions():
         )
         
         client = BetaAnalyticsDataClient(credentials=credentials)
-        
         request_obj = RunReportRequest(
             property=f"properties/{property_id}",
-            date_ranges=[{
-                "start_date": start_date,
-                "end_date": end_date
-            }],
+            date_ranges=[{"start_date": start_date, "end_date": end_date}],
             metrics=[{"name": "sessions"}]
         )
-        
         response = client.run_report(request_obj)
         
         sessions = 0
@@ -112,18 +114,8 @@ def get_sessions():
             "message": f"期間 {start_date} 〜 {end_date} のセッション数: {sessions}"
         })
     
-    except json.JSONDecodeError as e:
-        return jsonify({
-            "success": False,
-            "error": "SERVICE_ACCOUNT_JSON の形式が正しくありません",
-            "details": str(e)
-        }), 500
-    
     except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/ga4/comprehensive')
@@ -134,60 +126,31 @@ def get_comprehensive():
         end_date = request.args.get('end_date', 'today')
         
         if not property_id:
-            return jsonify({
-                "success": False,
-                "error": "GA4_PROPERTY_ID 環境変数が設定されていません"
-            }), 500
-        
-        if start_date not in ['7daysAgo', '30daysAgo', 'yesterday', 'today']:
-            try:
-                datetime.strptime(start_date, '%Y-%m-%d')
-            except ValueError:
-                return jsonify({
-                    "success": False,
-                    "error": "start_date は YYYY-MM-DD 形式で指定してください"
-                }), 400
-        
-        if end_date not in ['today', 'yesterday']:
-            try:
-                datetime.strptime(end_date, '%Y-%m-%d')
-            except ValueError:
-                return jsonify({
-                    "success": False,
-                    "error": "end_date は YYYY-MM-DD 形式で指定してください"
-                }), 400
+            return jsonify({"success": False, "error": "GA4_PROPERTY_ID 環境変数が設定されていません"}), 500
         
         if not SERVICE_ACCOUNT_JSON:
-            return jsonify({
-                "success": False,
-                "error": "SERVICE_ACCOUNT_JSON が設定されていません"
-            }), 500
+            return jsonify({"success": False, "error": "SERVICE_ACCOUNT_JSON が設定されていません"}), 500
         
         service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
         credentials = service_account.Credentials.from_service_account_info(
             service_account_info,
             scopes=['https://www.googleapis.com/auth/analytics.readonly']
         )
-        
         client = BetaAnalyticsDataClient(credentials=credentials)
         
         # 全体サマリー
-        summary_request = RunReportRequest(
+        summary_response = client.run_report(RunReportRequest(
             property=f"properties/{property_id}",
             date_ranges=[{"start_date": start_date, "end_date": end_date}],
             metrics=[
-                {"name": "sessions"},
-                {"name": "activeUsers"},
-                {"name": "screenPageViews"},
-                {"name": "engagementRate"},
-                {"name": "bounceRate"},
-                {"name": "averageSessionDuration"},
-                {"name": "screenPageViewsPerSession"},
-                {"name": "keyEvents"}
+                {"name": "sessions"}, {"name": "activeUsers"},
+                {"name": "screenPageViews"}, {"name": "engagementRate"},
+                {"name": "bounceRate"}, {"name": "averageSessionDuration"},
+                {"name": "screenPageViewsPerSession"}, {"name": "keyEvents"}
             ]
-        )
-        summary_response = client.run_report(summary_request)
+        ))
         
+        summary = {}
         if summary_response.rows:
             row = summary_response.rows[0]
             summary = {
@@ -200,26 +163,16 @@ def get_comprehensive():
                 "pageviews_per_session": float(row.metric_values[6].value),
                 "key_events": int(row.metric_values[7].value)
             }
-        else:
-            summary = {}
         
         # 参照元/メディア別
-        source_request = RunReportRequest(
+        source_response = client.run_report(RunReportRequest(
             property=f"properties/{property_id}",
             date_ranges=[{"start_date": start_date, "end_date": end_date}],
-            dimensions=[
-                {"name": "sessionSource"},
-                {"name": "sessionMedium"}
-            ],
-            metrics=[
-                {"name": "sessions"},
-                {"name": "activeUsers"}
-            ],
+            dimensions=[{"name": "sessionSource"}, {"name": "sessionMedium"}],
+            metrics=[{"name": "sessions"}, {"name": "activeUsers"}],
             order_bys=[{"metric": {"metric_name": "sessions"}, "desc": True}],
             limit=10
-        )
-        source_response = client.run_report(source_request)
-        
+        ))
         traffic_sources = []
         for row in source_response.rows:
             traffic_sources.append({
@@ -230,19 +183,13 @@ def get_comprehensive():
             })
         
         # デバイス別
-        device_request = RunReportRequest(
+        device_response = client.run_report(RunReportRequest(
             property=f"properties/{property_id}",
             date_ranges=[{"start_date": start_date, "end_date": end_date}],
             dimensions=[{"name": "deviceCategory"}],
-            metrics=[
-                {"name": "sessions"},
-                {"name": "activeUsers"},
-                {"name": "engagementRate"}
-            ],
+            metrics=[{"name": "sessions"}, {"name": "activeUsers"}, {"name": "engagementRate"}],
             order_bys=[{"metric": {"metric_name": "sessions"}, "desc": True}]
-        )
-        device_response = client.run_report(device_request)
-        
+        ))
         devices = []
         for row in device_response.rows:
             devices.append({
@@ -253,20 +200,14 @@ def get_comprehensive():
             })
         
         # ページパス別
-        page_request = RunReportRequest(
+        page_response = client.run_report(RunReportRequest(
             property=f"properties/{property_id}",
             date_ranges=[{"start_date": start_date, "end_date": end_date}],
             dimensions=[{"name": "pagePath"}],
-            metrics=[
-                {"name": "screenPageViews"},
-                {"name": "activeUsers"},
-                {"name": "averageSessionDuration"}
-            ],
+            metrics=[{"name": "screenPageViews"}, {"name": "activeUsers"}, {"name": "averageSessionDuration"}],
             order_bys=[{"metric": {"metric_name": "screenPageViews"}, "desc": True}],
             limit=20
-        )
-        page_response = client.run_report(page_request)
-        
+        ))
         pages = []
         for row in page_response.rows:
             pages.append({
@@ -277,19 +218,14 @@ def get_comprehensive():
             })
         
         # 市区町村別
-        city_request = RunReportRequest(
+        city_response = client.run_report(RunReportRequest(
             property=f"properties/{property_id}",
             date_ranges=[{"start_date": start_date, "end_date": end_date}],
             dimensions=[{"name": "city"}],
-            metrics=[
-                {"name": "sessions"},
-                {"name": "activeUsers"}
-            ],
+            metrics=[{"name": "sessions"}, {"name": "activeUsers"}],
             order_bys=[{"metric": {"metric_name": "sessions"}, "desc": True}],
             limit=10
-        )
-        city_response = client.run_report(city_request)
-        
+        ))
         cities = []
         for row in city_response.rows:
             cities.append({
@@ -299,20 +235,14 @@ def get_comprehensive():
             })
         
         # ランディングページ別
-        landing_request = RunReportRequest(
+        landing_response = client.run_report(RunReportRequest(
             property=f"properties/{property_id}",
             date_ranges=[{"start_date": start_date, "end_date": end_date}],
             dimensions=[{"name": "landingPage"}],
-            metrics=[
-                {"name": "sessions"},
-                {"name": "bounceRate"},
-                {"name": "engagementRate"}
-            ],
+            metrics=[{"name": "sessions"}, {"name": "bounceRate"}, {"name": "engagementRate"}],
             order_bys=[{"metric": {"metric_name": "sessions"}, "desc": True}],
             limit=10
-        )
-        landing_response = client.run_report(landing_request)
-        
+        ))
         landing_pages = []
         for row in landing_response.rows:
             landing_pages.append({
@@ -323,16 +253,14 @@ def get_comprehensive():
             })
         
         # イベント名別
-        event_request = RunReportRequest(
+        event_response = client.run_report(RunReportRequest(
             property=f"properties/{property_id}",
             date_ranges=[{"start_date": start_date, "end_date": end_date}],
             dimensions=[{"name": "eventName"}],
             metrics=[{"name": "eventCount"}],
             order_bys=[{"metric": {"metric_name": "eventCount"}, "desc": True}],
             limit=10
-        )
-        event_response = client.run_report(event_request)
-        
+        ))
         events = []
         for row in event_response.rows:
             events.append({
@@ -355,18 +283,8 @@ def get_comprehensive():
             "message": f"期間 {start_date} 〜 {end_date} の包括的なGA4データ"
         })
     
-    except json.JSONDecodeError as e:
-        return jsonify({
-            "success": False,
-            "error": "SERVICE_ACCOUNT_JSON の形式が正しくありません",
-            "details": str(e)
-        }), 500
-    
     except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/gsc/queries')
@@ -378,70 +296,39 @@ def get_gsc_queries():
         limit = int(request.args.get('limit', 20))
         
         if not site_url:
-            return jsonify({
-                "success": False,
-                "error": "site_url パラメータが必要です",
-                "usage": "/gsc/queries?site_url=https://your-site.com&start_date=2025-01-01&end_date=2025-01-31"
-            }), 400
+            return jsonify({"success": False, "error": "site_url パラメータが必要です"}), 400
         
         if not all([GSC_REFRESH_TOKEN, GSC_CLIENT_ID, GSC_CLIENT_SECRET]):
-            return jsonify({
-                "success": False,
-                "error": "サーチコンソールの環境変数が設定されていません"
-            }), 500
+            return jsonify({"success": False, "error": "サーチコンソールの環境変数が設定されていません"}), 500
         
-        # OAuth認証
         creds = Credentials(
-            token=None,
-            refresh_token=GSC_REFRESH_TOKEN,
+            token=None, refresh_token=GSC_REFRESH_TOKEN,
             token_uri='https://oauth2.googleapis.com/token',
-            client_id=GSC_CLIENT_ID,
-            client_secret=GSC_CLIENT_SECRET,
+            client_id=GSC_CLIENT_ID, client_secret=GSC_CLIENT_SECRET,
             scopes=['https://www.googleapis.com/auth/webmasters.readonly']
         )
-        
-        # Search Console API
         service = build('searchconsole', 'v1', credentials=creds)
         
-        # 1. 全体サマリーを取得（ディメンションなし）
-        summary_request = {
-            'startDate': start_date,
-            'endDate': end_date
-        }
-        
+        # 全体サマリー
         summary_response = service.searchanalytics().query(
             siteUrl=site_url,
-            body=summary_request
+            body={'startDate': start_date, 'endDate': end_date}
         ).execute()
         
-        # 全体の合計値を取得
+        summary = {'total_clicks': 0, 'total_impressions': 0, 'average_ctr': 0, 'average_position': 0}
         if summary_response.get('rows'):
-            summary_row = summary_response['rows'][0]
+            row = summary_response['rows'][0]
             summary = {
-                'total_clicks': summary_row['clicks'],
-                'total_impressions': summary_row['impressions'],
-                'average_ctr': round(summary_row['ctr'] * 100, 2),
-                'average_position': round(summary_row['position'], 1)
-            }
-        else:
-            summary = {
-                'total_clicks': 0,
-                'total_impressions': 0,
-                'average_ctr': 0,
-                'average_position': 0
+                'total_clicks': row['clicks'],
+                'total_impressions': row['impressions'],
+                'average_ctr': round(row['ctr'] * 100, 2),
+                'average_position': round(row['position'], 1)
             }
         
-        # 2. クエリ別の詳細データを取得
-        detail_request = {
-            'startDate': start_date,
-            'endDate': end_date,
-            'dimensions': ['query'],
-            'rowLimit': limit
-        }
-        
+        # クエリ別詳細
         detail_response = service.searchanalytics().query(
             siteUrl=site_url,
-            body=detail_request
+            body={'startDate': start_date, 'endDate': end_date, 'dimensions': ['query'], 'rowLimit': limit}
         ).execute()
         
         queries = []
@@ -455,31 +342,16 @@ def get_gsc_queries():
             })
         
         return jsonify({
-            "success": True,
-            "site_url": site_url,
-            "start_date": start_date,
-            "end_date": end_date,
-            "summary": summary,
-            "query_count": len(queries),
-            "queries": queries,
-            "message": f"{site_url} の検索データ（全体サマリー + 上位{len(queries)}件の詳細）"
+            "success": True, "site_url": site_url,
+            "start_date": start_date, "end_date": end_date,
+            "summary": summary, "query_count": len(queries), "queries": queries
         })
     
     except Exception as e:
         error_message = str(e)
-        
         if "invalid_grant" in error_message or "401" in error_message:
-            return jsonify({
-                "success": False,
-                "error": "トークンが無効です。再認証が必要です。",
-                "error_type": "TOKEN_EXPIRED",
-                "details": error_message
-            }), 401
-        else:
-            return jsonify({
-                "success": False,
-                "error": error_message
-            }), 500
+            return jsonify({"success": False, "error": "トークンが無効です。再認証が必要です。", "error_type": "TOKEN_EXPIRED"}), 401
+        return jsonify({"success": False, "error": error_message}), 500
 
 
 @app.route('/gsc/pages')
@@ -491,69 +363,39 @@ def get_gsc_pages():
         limit = int(request.args.get('limit', 20))
         
         if not site_url:
-            return jsonify({
-                "success": False,
-                "error": "site_url パラメータが必要です",
-                "usage": "/gsc/pages?site_url=https://your-site.com&start_date=2025-01-01&end_date=2025-01-31"
-            }), 400
+            return jsonify({"success": False, "error": "site_url パラメータが必要です"}), 400
         
         if not all([GSC_REFRESH_TOKEN, GSC_CLIENT_ID, GSC_CLIENT_SECRET]):
-            return jsonify({
-                "success": False,
-                "error": "サーチコンソールの環境変数が設定されていません"
-            }), 500
+            return jsonify({"success": False, "error": "サーチコンソールの環境変数が設定されていません"}), 500
         
-        # OAuth認証
         creds = Credentials(
-            token=None,
-            refresh_token=GSC_REFRESH_TOKEN,
+            token=None, refresh_token=GSC_REFRESH_TOKEN,
             token_uri='https://oauth2.googleapis.com/token',
-            client_id=GSC_CLIENT_ID,
-            client_secret=GSC_CLIENT_SECRET,
+            client_id=GSC_CLIENT_ID, client_secret=GSC_CLIENT_SECRET,
             scopes=['https://www.googleapis.com/auth/webmasters.readonly']
         )
-        
-        # Search Console API
         service = build('searchconsole', 'v1', credentials=creds)
         
-        # 1. 全体サマリーを取得
-        summary_request = {
-            'startDate': start_date,
-            'endDate': end_date
-        }
-        
+        # 全体サマリー
         summary_response = service.searchanalytics().query(
             siteUrl=site_url,
-            body=summary_request
+            body={'startDate': start_date, 'endDate': end_date}
         ).execute()
         
+        summary = {'total_clicks': 0, 'total_impressions': 0, 'average_ctr': 0, 'average_position': 0}
         if summary_response.get('rows'):
-            summary_row = summary_response['rows'][0]
+            row = summary_response['rows'][0]
             summary = {
-                'total_clicks': summary_row['clicks'],
-                'total_impressions': summary_row['impressions'],
-                'average_ctr': round(summary_row['ctr'] * 100, 2),
-                'average_position': round(summary_row['position'], 1)
-            }
-        else:
-            summary = {
-                'total_clicks': 0,
-                'total_impressions': 0,
-                'average_ctr': 0,
-                'average_position': 0
+                'total_clicks': row['clicks'],
+                'total_impressions': row['impressions'],
+                'average_ctr': round(row['ctr'] * 100, 2),
+                'average_position': round(row['position'], 1)
             }
         
-        # 2. ページ別の詳細データを取得
-        detail_request = {
-            'startDate': start_date,
-            'endDate': end_date,
-            'dimensions': ['page'],
-            'rowLimit': limit
-        }
-        
+        # ページ別詳細
         detail_response = service.searchanalytics().query(
             siteUrl=site_url,
-            body=detail_request
+            body={'startDate': start_date, 'endDate': end_date, 'dimensions': ['page'], 'rowLimit': limit}
         ).execute()
         
         pages = []
@@ -567,31 +409,177 @@ def get_gsc_pages():
             })
         
         return jsonify({
-            "success": True,
-            "site_url": site_url,
-            "start_date": start_date,
-            "end_date": end_date,
-            "summary": summary,
-            "page_count": len(pages),
-            "pages": pages,
-            "message": f"{site_url} のページ別データ（全体サマリー + 上位{len(pages)}件の詳細）"
+            "success": True, "site_url": site_url,
+            "start_date": start_date, "end_date": end_date,
+            "summary": summary, "page_count": len(pages), "pages": pages
         })
     
     except Exception as e:
         error_message = str(e)
-        
         if "invalid_grant" in error_message or "401" in error_message:
+            return jsonify({"success": False, "error": "トークンが無効です。再認証が必要です。", "error_type": "TOKEN_EXPIRED"}), 401
+        return jsonify({"success": False, "error": error_message}), 500
+
+
+@app.route('/google-ads/campaigns')
+def get_google_ads_campaigns():
+    try:
+        customer_id = request.args.get('customer_id')
+        start_date = request.args.get('start_date', '2025-01-01')
+        end_date = request.args.get('end_date', '2025-01-31')
+        
+        if not customer_id:
+            return jsonify({"success": False, "error": "customer_id パラメータが必要です（ハイフンなしの数字）"}), 400
+        
+        if not all([GOOGLE_ADS_REFRESH_TOKEN, GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_DEVELOPER_TOKEN]):
+            return jsonify({"success": False, "error": "Google広告の環境変数が設定されていません"}), 500
+        
+        client = get_google_ads_client()
+        ga_service = client.get_service("GoogleAdsService")
+        
+        query = f"""
+            SELECT
+                campaign.name,
+                campaign.status,
+                metrics.clicks,
+                metrics.impressions,
+                metrics.cost_micros,
+                metrics.conversions,
+                metrics.ctr
+            FROM campaign
+            WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+            AND campaign.status = 'ENABLED'
+            ORDER BY metrics.cost_micros DESC
+        """
+        
+        response = ga_service.search(customer_id=customer_id, query=query)
+        
+        campaigns = []
+        total_clicks = 0
+        total_impressions = 0
+        total_cost = 0
+        total_conversions = 0
+        
+        for row in response:
+            cost = row.metrics.cost_micros / 1000000
+            conversions = row.metrics.conversions
+            cpa = cost / conversions if conversions > 0 else 0
+            
+            campaigns.append({
+                'campaign_name': row.campaign.name,
+                'clicks': row.metrics.clicks,
+                'impressions': row.metrics.impressions,
+                'cost': round(cost, 2),
+                'conversions': round(conversions, 2),
+                'ctr': round(row.metrics.ctr * 100, 2),
+                'cpa': round(cpa, 2)
+            })
+            
+            total_clicks += row.metrics.clicks
+            total_impressions += row.metrics.impressions
+            total_cost += cost
+            total_conversions += conversions
+        
+        summary = {
+            'total_clicks': total_clicks,
+            'total_impressions': total_impressions,
+            'total_cost': round(total_cost, 2),
+            'total_conversions': round(total_conversions, 2),
+            'average_ctr': round((total_clicks / total_impressions * 100) if total_impressions > 0 else 0, 2),
+            'average_cpa': round((total_cost / total_conversions) if total_conversions > 0 else 0, 2)
+        }
+        
+        return jsonify({
+            "success": True,
+            "customer_id": customer_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            "summary": summary,
+            "campaign_count": len(campaigns),
+            "campaigns": campaigns,
+            "message": f"期間 {start_date} 〜 {end_date} のキャンペーン別データ"
+        })
+    
+    except Exception as e:
+        error_message = str(e)
+        if "DEVELOPER_TOKEN_NOT_APPROVED" in error_message:
             return jsonify({
                 "success": False,
-                "error": "トークンが無効です。再認証が必要です。",
-                "error_type": "TOKEN_EXPIRED",
-                "details": error_message
-            }), 401
-        else:
+                "error": "開発者トークンが本番承認されていません（テストアカウントのみアクセス可能）",
+                "error_type": "TOKEN_NOT_APPROVED"
+            }), 403
+        return jsonify({"success": False, "error": error_message}), 500
+
+
+@app.route('/google-ads/keywords')
+def get_google_ads_keywords():
+    try:
+        customer_id = request.args.get('customer_id')
+        start_date = request.args.get('start_date', '2025-01-01')
+        end_date = request.args.get('end_date', '2025-01-31')
+        limit = int(request.args.get('limit', 20))
+        
+        if not customer_id:
+            return jsonify({"success": False, "error": "customer_id パラメータが必要です"}), 400
+        
+        if not all([GOOGLE_ADS_REFRESH_TOKEN, GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_DEVELOPER_TOKEN]):
+            return jsonify({"success": False, "error": "Google広告の環境変数が設定されていません"}), 500
+        
+        client = get_google_ads_client()
+        ga_service = client.get_service("GoogleAdsService")
+        
+        query = f"""
+            SELECT
+                ad_group_criterion.keyword.text,
+                ad_group_criterion.keyword.match_type,
+                metrics.clicks,
+                metrics.impressions,
+                metrics.cost_micros,
+                metrics.conversions,
+                metrics.ctr
+            FROM keyword_view
+            WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+            AND ad_group_criterion.status = 'ENABLED'
+            ORDER BY metrics.clicks DESC
+            LIMIT {limit}
+        """
+        
+        response = ga_service.search(customer_id=customer_id, query=query)
+        
+        keywords = []
+        for row in response:
+            cost = row.metrics.cost_micros / 1000000
+            conversions = row.metrics.conversions
+            
+            keywords.append({
+                'keyword': row.ad_group_criterion.keyword.text,
+                'match_type': str(row.ad_group_criterion.keyword.match_type.name),
+                'clicks': row.metrics.clicks,
+                'impressions': row.metrics.impressions,
+                'cost': round(cost, 2),
+                'conversions': round(conversions, 2),
+                'ctr': round(row.metrics.ctr * 100, 2)
+            })
+        
+        return jsonify({
+            "success": True,
+            "customer_id": customer_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            "keyword_count": len(keywords),
+            "keywords": keywords,
+            "message": f"期間 {start_date} 〜 {end_date} のキーワード別データ（上位{len(keywords)}件）"
+        })
+    
+    except Exception as e:
+        error_message = str(e)
+        if "DEVELOPER_TOKEN_NOT_APPROVED" in error_message:
             return jsonify({
                 "success": False,
-                "error": error_message
-            }), 500
+                "error": "開発者トークンが本番承認されていません",
+                "error_type": "TOKEN_NOT_APPROVED"
+            }), 403
+        return jsonify({"success": False, "error": error_message}), 500
 
 
 if __name__ == '__main__':
