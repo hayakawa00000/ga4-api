@@ -616,10 +616,14 @@ def debug_google_ads():
         access_token = token_data.get('access_token')
         
         if not access_token:
-            return jsonify({
-                "step": "token_failed",
-                "token_response": token_data
-            })
+return jsonify({
+    "step": "api_called",
+    "status_code": api_response.status_code,
+    "url_used": url,
+    "customer_id": customer_id,
+    "developer_token_set": bool(GOOGLE_ADS_DEVELOPER_TOKEN),
+    "response_text": api_response.text[:500]
+})
         
         # APIリクエストを確認
         url = f"https://googleads.googleapis.com/v17/customers/{customer_id}/googleAds:search"
