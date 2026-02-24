@@ -364,7 +364,7 @@ def get_monthly():
                 {"dimension": {"dimension_name": "yearMonth"}, "desc": False},
                 {"metric": {"metric_name": "sessions"}, "desc": True}
             ],
-            limit=100
+            limit=200
         ))
         monthly_cities = []
         for row in city_response.rows:
@@ -376,6 +376,51 @@ def get_monthly():
                 "users": int(row.metric_values[1].value)
             })
 
+        # 月別×デバイス
+        device_response = client.run_report(RunReportRequest(
+            property=f"properties/{property_id}",
+            date_ranges=[{"start_date": start_date, "end_date": end_date}],
+            dimensions=[{"name": "yearMonth"}, {"name": "deviceCategory"}],
+            metrics=[{"name": "sessions"}, {"name": "activeUsers"}, {"name": "engagementRate"}],
+            order_bys=[
+                {"dimension": {"dimension_name": "yearMonth"}, "desc": False},
+                {"metric": {"metric_name": "sessions"}, "desc": True}
+            ]
+        ))
+        monthly_devices = []
+        for row in device_response.rows:
+            ym = row.dimension_values[0].value
+            monthly_devices.append({
+                "year_month": f"{ym[:4]}-{ym[4:]}",
+                "device": row.dimension_values[1].value,
+                "sessions": int(row.metric_values[0].value),
+                "users": int(row.metric_values[1].value),
+                "engagement_rate": round(float(row.metric_values[2].value), 4)
+            })
+
+        # 月別×ページ別
+        page_response = client.run_report(RunReportRequest(
+            property=f"properties/{property_id}",
+            date_ranges=[{"start_date": start_date, "end_date": end_date}],
+            dimensions=[{"name": "yearMonth"}, {"name": "pagePath"}],
+            metrics=[{"name": "screenPageViews"}, {"name": "activeUsers"}, {"name": "averageSessionDuration"}],
+            order_bys=[
+                {"dimension": {"dimension_name": "yearMonth"}, "desc": False},
+                {"metric": {"metric_name": "screenPageViews"}, "desc": True}
+            ],
+            limit=100
+        ))
+        monthly_pages = []
+        for row in page_response.rows:
+            ym = row.dimension_values[0].value
+            monthly_pages.append({
+                "year_month": f"{ym[:4]}-{ym[4:]}",
+                "page_path": row.dimension_values[1].value,
+                "pageviews": int(row.metric_values[0].value),
+                "users": int(row.metric_values[1].value),
+                "avg_session_duration": round(float(row.metric_values[2].value), 1)
+            })
+
         return jsonify({
             "success": True,
             "property_id": property_id,
@@ -383,7 +428,9 @@ def get_monthly():
             "end_date": end_date,
             "monthly_summary": monthly_summary,
             "monthly_sources": monthly_sources,
-            "monthly_cities": monthly_cities
+            "monthly_cities": monthly_cities,
+            "monthly_devices": monthly_devices,
+            "monthly_pages": monthly_pages
         })
 
     except Exception as e:
@@ -507,6 +554,117 @@ def get_gsc_pages():
             "success": True, "site_url": site_url,
             "start_date": start_date, "end_date": end_date,
             "summary": summary, "page_count": len(pages), "pages": pages
+        })
+
+    except Exception as e:
+        error_message = str(e)
+        if "invalid_grant" in error_message or "401" in error_message:
+            return jsonify({"success": False, "error": "トークンが無効です", "error_type": "TOKEN_EXPIRED"}), 401
+        return jsonify({"success": False, "error": error_message}), 500
+
+@app.route('/gsc/monthly')
+def get_gsc_monthly():
+    try:
+        site_url = request.args.get('site_url')
+        start_date = request.args.get('start_date', '2025-01-01')
+        end_date = request.args.get('end_date', '2025-03-31')
+        limit = int(request.args.get('limit', 20))
+
+        if not site_url:
+            return jsonify({"success": False, "error": "site_url が必要です"}), 400
+        if not all([GSC_REFRESH_TOKEN, GSC_CLIENT_ID, GSC_CLIENT_SECRET]):
+            return jsonify({"success": False, "error": "GSC環境変数が設定されていません"}), 500
+
+        creds = Credentials(
+            token=None, refresh_token=GSC_REFRESH_TOKEN,
+            token_uri='https://oauth2.googleapis.com/token',
+            client_id=GSC_CLIENT_ID, client_secret=GSC_CLIENT_SECRET,
+            scopes=['https://www.googleapis.com/auth/webmasters.readonly']
+        )
+        service = build('searchconsole', 'v1', credentials=creds)
+
+        # 月別クエリ
+        monthly_queries_response = service.searchanalytics().query(
+            siteUrl=site_url,
+            body={
+                'startDate': start_date,
+                'endDate': end_date,
+                'dimensions': ['date', 'query'],
+                'rowLimit': 500
+            }
+        ).execute()
+
+        # 月別に集計
+        from collections import defaultdict
+        monthly_query_data = defaultdict(lambda: defaultdict(lambda: {'clicks': 0, 'impressions': 0, 'position_sum': 0, 'count': 0}))
+        for row in monthly_queries_response.get('rows', []):
+            date_str = row['keys'][0]  # "2025-12-01"
+            ym = date_str[:7]  # "2025-12"
+            query = row['keys'][1]
+            monthly_query_data[ym][query]['clicks'] += row['clicks']
+            monthly_query_data[ym][query]['impressions'] += row['impressions']
+            monthly_query_data[ym][query]['position_sum'] += row['position']
+            monthly_query_data[ym][query]['count'] += 1
+
+        # 月別クエリランキング（上位limit件）
+        monthly_queries = []
+        for ym in sorted(monthly_query_data.keys()):
+            queries_sorted = sorted(
+                monthly_query_data[ym].items(),
+                key=lambda x: x[1]['clicks'],
+                reverse=True
+            )[:limit]
+            for query, data in queries_sorted:
+                avg_pos = data['position_sum'] / data['count'] if data['count'] > 0 else 0
+                ctr = data['clicks'] / data['impressions'] * 100 if data['impressions'] > 0 else 0
+                monthly_queries.append({
+                    'year_month': ym,
+                    'query': query,
+                    'clicks': data['clicks'],
+                    'impressions': data['impressions'],
+                    'ctr': round(ctr, 2),
+                    'position': round(avg_pos, 1)
+                })
+
+        # 月別サマリー
+        monthly_summary_response = service.searchanalytics().query(
+            siteUrl=site_url,
+            body={
+                'startDate': start_date,
+                'endDate': end_date,
+                'dimensions': ['date'],
+                'rowLimit': 500
+            }
+        ).execute()
+
+        monthly_summary_data = defaultdict(lambda: {'clicks': 0, 'impressions': 0, 'position_sum': 0, 'count': 0})
+        for row in monthly_summary_response.get('rows', []):
+            ym = row['keys'][0][:7]
+            monthly_summary_data[ym]['clicks'] += row['clicks']
+            monthly_summary_data[ym]['impressions'] += row['impressions']
+            monthly_summary_data[ym]['position_sum'] += row['position']
+            monthly_summary_data[ym]['count'] += 1
+
+        monthly_summary = []
+        for ym in sorted(monthly_summary_data.keys()):
+            d = monthly_summary_data[ym]
+            avg_pos = d['position_sum'] / d['count'] if d['count'] > 0 else 0
+            ctr = d['clicks'] / d['impressions'] * 100 if d['impressions'] > 0 else 0
+            monthly_summary.append({
+                'year_month': ym,
+                'clicks': d['clicks'],
+                'impressions': d['impressions'],
+                'ctr': round(ctr, 2),
+                'position': round(avg_pos, 1)
+            })
+
+        return jsonify({
+            "success": True,
+            "site_url": site_url,
+            "start_date": start_date,
+            "end_date": end_date,
+            "monthly_summary": monthly_summary,
+            "monthly_queries": monthly_queries
         })
 
     except Exception as e:
