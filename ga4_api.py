@@ -34,7 +34,8 @@ def get_ads_access_token():
 
 def query_google_ads(customer_id, query):
     access_token = get_ads_access_token()
-    url = f"https://googleads.googleapis.com/v15/customers/{customer_id}/googleAds:search"
+    # v14で試す
+    url = f"https://googleads.googleapis.com/v14/customers/{customer_id}/googleAds:search"
     headers = {
         'Authorization': f'Bearer {access_token}',
         'developer-token': GOOGLE_ADS_DEVELOPER_TOKEN,
@@ -43,7 +44,7 @@ def query_google_ads(customer_id, query):
     }
     response = http_requests.post(url, headers=headers, json={'query': query})
     if response.status_code != 200:
-        return {'error': response.text}
+        return {'error': response.text, 'status_code': response.status_code, 'url': url}
     return response.json()
 
 @app.route('/')
@@ -91,7 +92,7 @@ def debug_google_ads():
             "developer_token_first10": GOOGLE_ADS_DEVELOPER_TOKEN[:10] if GOOGLE_ADS_DEVELOPER_TOKEN else None,
             "access_token_obtained": bool(access_token),
             "access_token_first10": access_token[:10] if access_token else None,
-            "response_text": api_response.text[:1000]
+            "response_text": api_response.text[:2000]
         })
 
     except Exception as e:
