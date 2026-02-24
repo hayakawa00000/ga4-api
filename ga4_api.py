@@ -71,7 +71,7 @@ def debug_google_ads():
         if not access_token:
             return jsonify({"step": "token_failed", "token_response": token_data})
 
-        url = f"https://googleads.googleapis.com/v17/customers/{customer_id}/googleAds:search"
+        url = f"https://googleads.googleapis.com/v15/customers/{customer_id}/googleAds:search"
         headers = {
             'Authorization': f'Bearer {access_token}',
             'developer-token': GOOGLE_ADS_DEVELOPER_TOKEN,
