@@ -26,22 +26,19 @@ GOOGLE_ADS_CLIENT_ID = os.environ.get('GOOGLE_ADS_CLIENT_ID')
 GOOGLE_ADS_CLIENT_SECRET = os.environ.get('GOOGLE_ADS_CLIENT_SECRET')
 GOOGLE_ADS_DEVELOPER_TOKEN = os.environ.get('GOOGLE_ADS_DEVELOPER_TOKEN')
 
-def get_google_ads_client():
+def get_google_ads_client(login_customer_id=None):
     """Google広告クライアントを作成"""
-    credentials = Credentials(
-        token=None,
-        refresh_token=GOOGLE_ADS_REFRESH_TOKEN,
-        token_uri='https://oauth2.googleapis.com/token',
-        client_id=GOOGLE_ADS_CLIENT_ID,
-        client_secret=GOOGLE_ADS_CLIENT_SECRET,
-        scopes=['https://www.googleapis.com/auth/adwords']
-    )
+    config = {
+        "developer_token": GOOGLE_ADS_DEVELOPER_TOKEN,
+        "client_id": GOOGLE_ADS_CLIENT_ID,
+        "client_secret": GOOGLE_ADS_CLIENT_SECRET,
+        "refresh_token": GOOGLE_ADS_REFRESH_TOKEN,
+        "use_proto_plus": True,
+    }
+    if login_customer_id:
+        config["login_customer_id"] = login_customer_id
     
-    return GoogleAdsClient(
-        credentials=credentials,
-        developer_token=GOOGLE_ADS_DEVELOPER_TOKEN,
-        use_proto_plus=True
-    )
+    return GoogleAdsClient.load_from_dict(config)
 
 @app.route('/')
 def home():
@@ -434,7 +431,7 @@ def get_google_ads_campaigns():
         if not all([GOOGLE_ADS_REFRESH_TOKEN, GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_DEVELOPER_TOKEN]):
             return jsonify({"success": False, "error": "Google広告の環境変数が設定されていません"}), 500
         
-        client = get_google_ads_client()
+        client = get_google_ads_client(login_customer_id=customer_id)
         ga_service = client.get_service("GoogleAdsService")
         
         query = f"""
@@ -525,7 +522,7 @@ def get_google_ads_keywords():
         if not all([GOOGLE_ADS_REFRESH_TOKEN, GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_DEVELOPER_TOKEN]):
             return jsonify({"success": False, "error": "Google広告の環境変数が設定されていません"}), 500
         
-        client = get_google_ads_client()
+        client = get_google_ads_client(login_customer_id=customer_id)
         ga_service = client.get_service("GoogleAdsService")
         
         query = f"""
