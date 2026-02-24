@@ -39,7 +39,7 @@ def get_ads_access_token():
 def query_google_ads(customer_id, query):
     """Google Ads APIをRESTで叩く"""
     access_token = get_ads_access_token()
-    url = f"https://googleads.googleapis.com/v17/customers/{customer_id}/googleAds:search"
+    url = f"https://googleads.googleapis.com/v18/customers/{customer_id}/googleAds:searchStream"
     headers = {
         'Authorization': f'Bearer {access_token}',
         'developer-token': GOOGLE_ADS_DEVELOPER_TOKEN,
@@ -47,7 +47,20 @@ def query_google_ads(customer_id, query):
         'Content-Type': 'application/json'
     }
     response = http_requests.post(url, headers=headers, json={'query': query})
-    return response.json()
+    
+    # searchStreamはJSONL形式で返ってくるので最初の行をパース
+    lines = response.text.strip().split('\n')
+    results = []
+    for line in lines:
+        if line.strip() and line.strip() not in ['[', ']', ',']:
+            try:
+                chunk = json.loads(line.strip().rstrip(','))
+                if 'results' in chunk:
+                    results.extend(chunk['results'])
+            except:
+                pass
+    
+    return {'results': results}
 
 @app.route('/')
 def home():
