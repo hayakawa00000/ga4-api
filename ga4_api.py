@@ -88,6 +88,9 @@ def debug_google_ads():
             "url_used": url,
             "customer_id": customer_id,
             "developer_token_set": bool(GOOGLE_ADS_DEVELOPER_TOKEN),
+            "developer_token_first10": GOOGLE_ADS_DEVELOPER_TOKEN[:10] if GOOGLE_ADS_DEVELOPER_TOKEN else None,
+            "access_token_obtained": bool(access_token),
+            "access_token_first10": access_token[:10] if access_token else None,
             "response_text": api_response.text[:1000]
         })
 
