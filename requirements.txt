@@ -2,5 +2,6 @@ flask==3.0.0
 google-analytics-data==0.17.0
 google-auth==2.23.0
 google-api-python-client==2.108.0
+google-ads==24.1.0
 protobuf==4.24.4
 gunicorn==21.2.0
