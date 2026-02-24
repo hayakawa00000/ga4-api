@@ -4,7 +4,7 @@ from google.analytics.data_v1beta.types import RunReportRequest
 from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from google.ads.googleads.client import GoogleAdsClient
+import requests as http_requests
 import os
 import json
 from datetime import datetime
@@ -26,19 +26,28 @@ GOOGLE_ADS_CLIENT_ID = os.environ.get('GOOGLE_ADS_CLIENT_ID')
 GOOGLE_ADS_CLIENT_SECRET = os.environ.get('GOOGLE_ADS_CLIENT_SECRET')
 GOOGLE_ADS_DEVELOPER_TOKEN = os.environ.get('GOOGLE_ADS_DEVELOPER_TOKEN')
 
-def get_google_ads_client(login_customer_id=None):
-    """Google広告クライアントを作成"""
-    config = {
-        "developer_token": GOOGLE_ADS_DEVELOPER_TOKEN,
-        "client_id": GOOGLE_ADS_CLIENT_ID,
-        "client_secret": GOOGLE_ADS_CLIENT_SECRET,
-        "refresh_token": GOOGLE_ADS_REFRESH_TOKEN,
-        "use_proto_plus": True,
+def get_ads_access_token():
+    """Google広告用アクセストークンを取得"""
+    response = http_requests.post('https://oauth2.googleapis.com/token', data={
+        'client_id': GOOGLE_ADS_CLIENT_ID,
+        'client_secret': GOOGLE_ADS_CLIENT_SECRET,
+        'refresh_token': GOOGLE_ADS_REFRESH_TOKEN,
+        'grant_type': 'refresh_token'
+    })
+    return response.json().get('access_token')
+
+def query_google_ads(customer_id, query):
+    """Google Ads APIをRESTで叩く"""
+    access_token = get_ads_access_token()
+    url = f"https://googleads.googleapis.com/v17/customers/{customer_id}/googleAds:search"
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'developer-token': GOOGLE_ADS_DEVELOPER_TOKEN,
+        'login-customer-id': customer_id,
+        'Content-Type': 'application/json'
     }
-    if login_customer_id:
-        config["login_customer_id"] = login_customer_id
-    
-    return GoogleAdsClient.load_from_dict(config)
+    response = http_requests.post(url, headers=headers, json={'query': query})
+    return response.json()
 
 @app.route('/')
 def home():
@@ -306,7 +315,6 @@ def get_gsc_queries():
         )
         service = build('searchconsole', 'v1', credentials=creds)
         
-        # 全体サマリー
         summary_response = service.searchanalytics().query(
             siteUrl=site_url,
             body={'startDate': start_date, 'endDate': end_date}
@@ -322,7 +330,6 @@ def get_gsc_queries():
                 'average_position': round(row['position'], 1)
             }
         
-        # クエリ別詳細
         detail_response = service.searchanalytics().query(
             siteUrl=site_url,
             body={'startDate': start_date, 'endDate': end_date, 'dimensions': ['query'], 'rowLimit': limit}
@@ -373,7 +380,6 @@ def get_gsc_pages():
         )
         service = build('searchconsole', 'v1', credentials=creds)
         
-        # 全体サマリー
         summary_response = service.searchanalytics().query(
             siteUrl=site_url,
             body={'startDate': start_date, 'endDate': end_date}
@@ -389,7 +395,6 @@ def get_gsc_pages():
                 'average_position': round(row['position'], 1)
             }
         
-        # ページ別詳細
         detail_response = service.searchanalytics().query(
             siteUrl=site_url,
             body={'startDate': start_date, 'endDate': end_date, 'dimensions': ['page'], 'rowLimit': limit}
@@ -431,10 +436,7 @@ def get_google_ads_campaigns():
         if not all([GOOGLE_ADS_REFRESH_TOKEN, GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_DEVELOPER_TOKEN]):
             return jsonify({"success": False, "error": "Google広告の環境変数が設定されていません"}), 500
         
-        client = get_google_ads_client(login_customer_id=customer_id)
-        ga_service = client.get_service("GoogleAdsService")
-        
-        query = f"""
+        gaql_query = f"""
             SELECT
                 campaign.name,
                 campaign.status,
@@ -449,7 +451,17 @@ def get_google_ads_campaigns():
             ORDER BY metrics.cost_micros DESC
         """
         
-        response = ga_service.search(customer_id=customer_id, query=query)
+        data = query_google_ads(customer_id, gaql_query)
+        
+        if 'error' in data:
+            error_msg = str(data['error'])
+            if 'DEVELOPER_TOKEN_NOT_APPROVED' in error_msg:
+                return jsonify({
+                    "success": False,
+                    "error": "開発者トークンが本番承認されていません（テストアカウントのみアクセス可能）",
+                    "error_type": "TOKEN_NOT_APPROVED"
+                }), 403
+            return jsonify({"success": False, "error": error_msg}), 500
         
         campaigns = []
         total_clicks = 0
@@ -457,23 +469,26 @@ def get_google_ads_campaigns():
         total_cost = 0
         total_conversions = 0
         
-        for row in response:
-            cost = row.metrics.cost_micros / 1000000
-            conversions = row.metrics.conversions
+        for row in data.get('results', []):
+            cost = int(row.get('metrics', {}).get('costMicros', 0)) / 1000000
+            clicks = int(row.get('metrics', {}).get('clicks', 0))
+            impressions = int(row.get('metrics', {}).get('impressions', 0))
+            conversions = float(row.get('metrics', {}).get('conversions', 0))
+            ctr = float(row.get('metrics', {}).get('ctr', 0))
             cpa = cost / conversions if conversions > 0 else 0
             
             campaigns.append({
-                'campaign_name': row.campaign.name,
-                'clicks': row.metrics.clicks,
-                'impressions': row.metrics.impressions,
+                'campaign_name': row.get('campaign', {}).get('name', ''),
+                'clicks': clicks,
+                'impressions': impressions,
                 'cost': round(cost, 2),
                 'conversions': round(conversions, 2),
-                'ctr': round(row.metrics.ctr * 100, 2),
+                'ctr': round(ctr * 100, 2),
                 'cpa': round(cpa, 2)
             })
             
-            total_clicks += row.metrics.clicks
-            total_impressions += row.metrics.impressions
+            total_clicks += clicks
+            total_impressions += impressions
             total_cost += cost
             total_conversions += conversions
         
@@ -498,14 +513,7 @@ def get_google_ads_campaigns():
         })
     
     except Exception as e:
-        error_message = str(e)
-        if "DEVELOPER_TOKEN_NOT_APPROVED" in error_message:
-            return jsonify({
-                "success": False,
-                "error": "開発者トークンが本番承認されていません（テストアカウントのみアクセス可能）",
-                "error_type": "TOKEN_NOT_APPROVED"
-            }), 403
-        return jsonify({"success": False, "error": error_message}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/google-ads/keywords')
@@ -522,10 +530,7 @@ def get_google_ads_keywords():
         if not all([GOOGLE_ADS_REFRESH_TOKEN, GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_DEVELOPER_TOKEN]):
             return jsonify({"success": False, "error": "Google広告の環境変数が設定されていません"}), 500
         
-        client = get_google_ads_client(login_customer_id=customer_id)
-        ga_service = client.get_service("GoogleAdsService")
-        
-        query = f"""
+        gaql_query = f"""
             SELECT
                 ad_group_criterion.keyword.text,
                 ad_group_criterion.keyword.match_type,
@@ -541,21 +546,31 @@ def get_google_ads_keywords():
             LIMIT {limit}
         """
         
-        response = ga_service.search(customer_id=customer_id, query=query)
+        data = query_google_ads(customer_id, gaql_query)
+        
+        if 'error' in data:
+            error_msg = str(data['error'])
+            if 'DEVELOPER_TOKEN_NOT_APPROVED' in error_msg:
+                return jsonify({
+                    "success": False,
+                    "error": "開発者トークンが本番承認されていません",
+                    "error_type": "TOKEN_NOT_APPROVED"
+                }), 403
+            return jsonify({"success": False, "error": error_msg}), 500
         
         keywords = []
-        for row in response:
-            cost = row.metrics.cost_micros / 1000000
-            conversions = row.metrics.conversions
+        for row in data.get('results', []):
+            cost = int(row.get('metrics', {}).get('costMicros', 0)) / 1000000
+            conversions = float(row.get('metrics', {}).get('conversions', 0))
             
             keywords.append({
-                'keyword': row.ad_group_criterion.keyword.text,
-                'match_type': str(row.ad_group_criterion.keyword.match_type.name),
-                'clicks': row.metrics.clicks,
-                'impressions': row.metrics.impressions,
+                'keyword': row.get('adGroupCriterion', {}).get('keyword', {}).get('text', ''),
+                'match_type': row.get('adGroupCriterion', {}).get('keyword', {}).get('matchType', ''),
+                'clicks': int(row.get('metrics', {}).get('clicks', 0)),
+                'impressions': int(row.get('metrics', {}).get('impressions', 0)),
                 'cost': round(cost, 2),
                 'conversions': round(conversions, 2),
-                'ctr': round(row.metrics.ctr * 100, 2)
+                'ctr': round(float(row.get('metrics', {}).get('ctr', 0)) * 100, 2)
             })
         
         return jsonify({
@@ -569,14 +584,7 @@ def get_google_ads_keywords():
         })
     
     except Exception as e:
-        error_message = str(e)
-        if "DEVELOPER_TOKEN_NOT_APPROVED" in error_message:
-            return jsonify({
-                "success": False,
-                "error": "開発者トークンが本番承認されていません",
-                "error_type": "TOKEN_NOT_APPROVED"
-            }), 403
-        return jsonify({"success": False, "error": error_message}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 if __name__ == '__main__':
