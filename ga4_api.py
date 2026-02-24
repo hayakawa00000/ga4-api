@@ -354,27 +354,34 @@ def get_monthly():
                 "users": int(row.metric_values[1].value)
             })
 
-        # 月別×都市
-        city_response = client.run_report(RunReportRequest(
-            property=f"properties/{property_id}",
-            date_ranges=[{"start_date": start_date, "end_date": end_date}],
-            dimensions=[{"name": "yearMonth"}, {"name": "city"}],
-            metrics=[{"name": "sessions"}, {"name": "activeUsers"}],
-            order_bys=[
-                {"dimension": {"dimension_name": "yearMonth"}, "desc": False},
-                {"metric": {"metric_name": "sessions"}, "desc": True}
-            ],
-            limit=500
-        ))
+        # 月別×都市（ページネーション対応）
         monthly_cities = []
-        for row in city_response.rows:
-            ym = row.dimension_values[0].value
-            monthly_cities.append({
-                "year_month": f"{ym[:4]}-{ym[4:]}",
-                "city": row.dimension_values[1].value,
-                "sessions": int(row.metric_values[0].value),
-                "users": int(row.metric_values[1].value)
-            })
+        offset = 0
+        page_size = 10000
+        while True:
+            city_response = client.run_report(RunReportRequest(
+                property=f"properties/{property_id}",
+                date_ranges=[{"start_date": start_date, "end_date": end_date}],
+                dimensions=[{"name": "yearMonth"}, {"name": "city"}],
+                metrics=[{"name": "sessions"}, {"name": "activeUsers"}],
+                order_bys=[
+                    {"dimension": {"dimension_name": "yearMonth"}, "desc": False},
+                    {"metric": {"metric_name": "sessions"}, "desc": True}
+                ],
+                limit=page_size,
+                offset=offset
+            ))
+            for row in city_response.rows:
+                ym = row.dimension_values[0].value
+                monthly_cities.append({
+                    "year_month": f"{ym[:4]}-{ym[4:]}",
+                    "city": row.dimension_values[1].value,
+                    "sessions": int(row.metric_values[0].value),
+                    "users": int(row.metric_values[1].value)
+                })
+            if len(city_response.rows) < page_size:
+                break
+            offset += page_size
 
         # 月別×デバイス
         device_response = client.run_report(RunReportRequest(
