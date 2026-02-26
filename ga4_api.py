@@ -664,14 +664,16 @@ def get_gsc_area_queries():
                     d['pos_imp'] += row['position'] * row['impressions']
 
         import datetime
-        from dateutil.relativedelta import relativedelta
-        s_date = datetime.datetime.strptime(start_date[:8] + "01", '%Y-%m-%d')
-        e_date = datetime.datetime.strptime(end_date[:8] + "01", '%Y-%m-%d')
+
+        s_dt = datetime.datetime.strptime(start_date[:7], '%Y-%m')
+        e_dt = datetime.datetime.strptime(end_date[:7], '%Y-%m')
         ym_list = []
-        curr = s_date
-        while curr <= e_date:
+        curr = s_dt
+        while curr <= e_dt:
             ym_list.append(curr.strftime('%Y-%m'))
-            curr += relativedelta(months=1)
+            month = curr.month % 12 + 1
+            year = curr.year + (curr.month // 12)
+            curr = curr.replace(year=year, month=month)
         ym_list.reverse()
 
         area_queries = []
