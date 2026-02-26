@@ -415,7 +415,7 @@ def get_monthly():
                 {"dimension": {"dimension_name": "yearMonth"}, "desc": False},
                 {"metric": {"metric_name": "screenPageViews"}, "desc": True}
             ],
-            limit=100
+            limit=500
         ))
         monthly_pages = []
         for row in page_response.rows:
