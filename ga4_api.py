@@ -1035,13 +1035,30 @@ def generate_report():
     try:
         os.makedirs(GENERATED_FILES_DIR, exist_ok=True)
 
-        data = request.get_json()
+        # Difyからは JSON文字列として渡される場合があるため両方対応
+        raw = request.get_json(force=True, silent=True)
+        if raw is None:
+            raw = request.get_data(as_text=True)
+        
+        if isinstance(raw, str):
+            import json as _json
+            data = _json.loads(raw)
+        elif isinstance(raw, dict):
+            data = raw
+        else:
+            return jsonify({"success": False, "error": f"不正なBodyタイプ: {type(raw)}"}), 400
+
         if not data:
             return jsonify({"success": False, "error": "JSONデータが必要です"}), 400
 
-        # build_report.py を動的にインポート
+        # build_report.py を動的にインポート（キャッシュクリア対応）
         sys.path.insert(0, os.path.dirname(__file__))
-        import build_report as br
+        if 'build_report' in sys.modules:
+            import importlib
+            import build_report as br
+            importlib.reload(br)
+        else:
+            import build_report as br
 
         # テンプレートを読み込み、データを埋め込んでPPTXを生成
         output_filename = f"report_{uuid.uuid4().hex[:8]}.pptx"
