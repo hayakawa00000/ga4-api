@@ -405,28 +405,35 @@ def get_monthly():
                 "engagement_rate": round(float(row.metric_values[2].value), 4)
             })
 
-        # 月別×ページ別
-        page_response = client.run_report(RunReportRequest(
-            property=f"properties/{property_id}",
-            date_ranges=[{"start_date": start_date, "end_date": end_date}],
-            dimensions=[{"name": "yearMonth"}, {"name": "pagePath"}],
-            metrics=[{"name": "screenPageViews"}, {"name": "activeUsers"}, {"name": "averageSessionDuration"}],
-            order_bys=[
-                {"dimension": {"dimension_name": "yearMonth"}, "desc": False},
-                {"metric": {"metric_name": "screenPageViews"}, "desc": True}
-            ],
-            limit=500
-        ))
+        # 月別×ページ別（ページネーション対応）
         monthly_pages = []
-        for row in page_response.rows:
-            ym = row.dimension_values[0].value
-            monthly_pages.append({
-                "year_month": f"{ym[:4]}-{ym[4:]}",
-                "page_path": row.dimension_values[1].value,
-                "pageviews": int(row.metric_values[0].value),
-                "users": int(row.metric_values[1].value),
-                "avg_session_duration": round(float(row.metric_values[2].value), 1)
-            })
+        offset = 0
+        page_size = 10000
+        while True:
+            page_response = client.run_report(RunReportRequest(
+                property=f"properties/{property_id}",
+                date_ranges=[{"start_date": start_date, "end_date": end_date}],
+                dimensions=[{"name": "yearMonth"}, {"name": "pagePath"}],
+                metrics=[{"name": "screenPageViews"}, {"name": "activeUsers"}, {"name": "averageSessionDuration"}],
+                order_bys=[
+                    {"dimension": {"dimension_name": "yearMonth"}, "desc": False},
+                    {"metric": {"metric_name": "screenPageViews"}, "desc": True}
+                ],
+                limit=page_size,
+                offset=offset
+            ))
+            for row in page_response.rows:
+                ym = row.dimension_values[0].value
+                monthly_pages.append({
+                    "year_month": f"{ym[:4]}-{ym[4:]}",
+                    "page_path": row.dimension_values[1].value,
+                    "pageviews": int(row.metric_values[0].value),
+                    "users": int(row.metric_values[1].value),
+                    "avg_session_duration": round(float(row.metric_values[2].value), 1)
+                })
+            if len(page_response.rows) < page_size:
+                break
+            offset += page_size
 
         return jsonify({
             "success": True,
