@@ -1020,6 +1020,59 @@ def get_google_ads_keywords():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+# ============================================================
+# PPTX生成エンドポイント
+# ============================================================
+import sys
+import uuid
+import tempfile
+
+TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'template.pptx')
+GENERATED_FILES_DIR = os.path.join(tempfile.gettempdir(), 'generated_reports')
+
+@app.route('/generate_report', methods=['POST'])
+def generate_report():
+    try:
+        os.makedirs(GENERATED_FILES_DIR, exist_ok=True)
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "JSONデータが必要です"}), 400
+
+        # build_report.py を動的にインポート
+        sys.path.insert(0, os.path.dirname(__file__))
+        import build_report as br
+
+        # テンプレートを読み込み、データを埋め込んでPPTXを生成
+        output_filename = f"report_{uuid.uuid4().hex[:8]}.pptx"
+        output_path = os.path.join(GENERATED_FILES_DIR, output_filename)
+
+        br.generate(data, TEMPLATE_PATH, output_path)
+
+        # 生成したファイルのダウンロードURLを返す
+        base_url = request.host_url.rstrip('/')
+        download_url = f"{base_url}/files/{output_filename}"
+
+        return jsonify({
+            "success": True,
+            "filename": output_filename,
+            "download_url": download_url
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
+
+@app.route('/files/<filename>', methods=['GET'])
+def download_file(filename):
+    from flask import send_from_directory
+    try:
+        return send_from_directory(GENERATED_FILES_DIR, filename, as_attachment=True)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 404
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
