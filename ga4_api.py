@@ -443,6 +443,66 @@ def get_monthly():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/ga4/key-events')
+def get_key_events():
+    """月別×イベント名別のキーイベント件数を返す"""
+    try:
+        property_id = request.args.get('property_id', DEFAULT_PROPERTY_ID)
+        start_date = request.args.get('start_date', '2025-01-01')
+        end_date = request.args.get('end_date', '2025-03-31')
+
+        if not property_id:
+            return jsonify({"success": False, "error": "GA4_PROPERTY_ID が設定されていません"}), 500
+        if not SERVICE_ACCOUNT_JSON:
+            return jsonify({"success": False, "error": "SERVICE_ACCOUNT_JSON が設定されていません"}), 500
+
+        service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=['https://www.googleapis.com/auth/analytics.readonly']
+        )
+        client = BetaAnalyticsDataClient(credentials=credentials)
+
+        from google.analytics.data_v1beta.types import FilterExpression, Filter
+
+        # 月別×イベント名別のキーイベント数
+        response = client.run_report(RunReportRequest(
+            property=f"properties/{property_id}",
+            date_ranges=[{"start_date": start_date, "end_date": end_date}],
+            dimensions=[{"name": "yearMonth"}, {"name": "eventName"}],
+            metrics=[{"name": "keyEvents"}],
+            dimension_filter=FilterExpression(
+                filter=Filter(
+                    field_name="isKeyEvent",
+                    string_filter=Filter.StringFilter(value="true")
+                )
+            ),
+            order_bys=[
+                {"dimension": {"dimension_name": "yearMonth"}, "desc": False},
+                {"metric": {"metric_name": "keyEvents"}, "desc": True}
+            ]
+        ))
+
+        monthly_key_events = []
+        for row in response.rows:
+            ym = row.dimension_values[0].value
+            monthly_key_events.append({
+                "year_month": f"{ym[:4]}-{ym[4:]}",
+                "event_name": row.dimension_values[1].value,
+                "count": int(row.metric_values[0].value)
+            })
+
+        return jsonify({
+            "success": True,
+            "property_id": property_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            "monthly_key_events": monthly_key_events
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route('/gsc/queries')
 def get_gsc_queries():
     try:
