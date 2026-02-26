@@ -573,6 +573,147 @@ def get_gsc_queries():
             return jsonify({"success": False, "error": "トークンが無効です", "error_type": "TOKEN_EXPIRED"}), 401
         return jsonify({"success": False, "error": error_message}), 500
 
+@app.route('/gsc/area_queries', methods=['GET', 'POST'])
+def get_gsc_area_queries():
+    try:
+        if request.method == 'POST':
+            data = request.get_json() or {}
+            site_url = data.get('site_url')
+            start_date = data.get('start_date', '2025-01-01')
+            end_date = data.get('end_date', '2025-01-31')
+            areas_input = data.get('areas', [])
+            if isinstance(areas_input, str):
+                areas_str = areas_input
+            else:
+                areas_str = ",".join(areas_input)
+        else:
+            site_url = request.args.get('site_url')
+            start_date = request.args.get('start_date', '2025-01-01')
+            end_date = request.args.get('end_date', '2025-01-31')
+            areas_str = request.args.get('areas', '')
+
+        if not site_url:
+            return jsonify({"success": False, "error": "site_url が必要です"}), 400
+        if not all([GSC_REFRESH_TOKEN, GSC_CLIENT_ID, GSC_CLIENT_SECRET]):
+            return jsonify({"success": False, "error": "GSC環境変数が設定されていません"}), 500
+            
+        areas = [a.strip() for a in areas_str.split(',') if a.strip()]
+        if not areas:
+            return jsonify({"success": False, "error": "areas が必要です"}), 400
+
+        cities = []
+        for a in areas:
+            parts = a.split()
+            city = parts[-1] if len(parts) > 1 else a
+            if city:
+                cities.append(city)
+
+        creds = Credentials(
+            token=None, refresh_token=GSC_REFRESH_TOKEN,
+            token_uri='https://oauth2.googleapis.com/token',
+            client_id=GSC_CLIENT_ID, client_secret=GSC_CLIENT_SECRET,
+            scopes=['https://www.googleapis.com/auth/webmasters.readonly']
+        )
+        service = build('searchconsole', 'v1', credentials=creds)
+
+        regex_pattern = "(" + "|".join(cities) + ")"
+        response = service.searchanalytics().query(
+            siteUrl=site_url,
+            body={
+                'startDate': start_date,
+                'endDate': end_date,
+                'dimensions': ['date', 'query'],
+                'dimensionFilterGroups': [{
+                    'filters': [{
+                        'dimension': 'query',
+                        'operator': 'includingRegex',
+                        'expression': regex_pattern
+                    }]
+                }],
+                'rowLimit': 25000
+            }
+        ).execute()
+
+        from collections import defaultdict
+        # monthly_data[ym][city] = {'gaiheki': {...}, 'yane': {...}}
+        monthly_data = defaultdict(lambda: defaultdict(lambda: {
+            'gaiheki': {'clicks': 0, 'impressions': 0, 'pos_imp': 0},
+            'yane': {'clicks': 0, 'impressions': 0, 'pos_imp': 0}
+        }))
+
+        for row in response.get('rows', []):
+            date_str = row['keys'][0]
+            ym = date_str[:7]
+            query = row['keys'][1].replace('　', ' ')
+            
+            for city in cities:
+                q_gaiheki = f"{city} 外壁塗装"
+                q_gaiheki2 = f"{city}外壁塗装"
+                q_yane = f"{city} 屋根塗装"
+                q_yane2 = f"{city}屋根塗装"
+                
+                if query in [q_gaiheki, q_gaiheki2]:
+                    d = monthly_data[ym][city]['gaiheki']
+                    d['clicks'] += row['clicks']
+                    d['impressions'] += row['impressions']
+                    d['pos_imp'] += row['position'] * row['impressions']
+                elif query in [q_yane, q_yane2]:
+                    d = monthly_data[ym][city]['yane']
+                    d['clicks'] += row['clicks']
+                    d['impressions'] += row['impressions']
+                    d['pos_imp'] += row['position'] * row['impressions']
+
+        import datetime
+        from dateutil.relativedelta import relativedelta
+        s_date = datetime.datetime.strptime(start_date[:8] + "01", '%Y-%m-%d')
+        e_date = datetime.datetime.strptime(end_date[:8] + "01", '%Y-%m-%d')
+        ym_list = []
+        curr = s_date
+        while curr <= e_date:
+            ym_list.append(curr.strftime('%Y-%m'))
+            curr += relativedelta(months=1)
+        ym_list.reverse()
+
+        area_queries = []
+        for ym in ym_list:
+            areas_list = []
+            for city in cities:
+                city_data = monthly_data[ym][city]
+                
+                def calc_metrics(d):
+                    clicks = d['clicks']
+                    imps = d['impressions']
+                    ctr = round((clicks / imps) * 100, 2) if imps > 0 else 0.0
+                    pos = round(d['pos_imp'] / imps, 1) if imps > 0 else 0.0
+                    return {'clicks': clicks, 'impressions': imps, 'ctr': ctr, 'position': pos}
+                
+                g_metrics = calc_metrics(city_data['gaiheki'])
+                y_metrics = calc_metrics(city_data['yane'])
+                
+                areas_list.append({
+                    'area': city,
+                    'queries': [
+                        {'query': f"{city} 外壁塗装", **g_metrics},
+                        {'query': f"{city} 屋根塗装", **y_metrics}
+                    ]
+                })
+            area_queries.append({
+                'year_month': ym,
+                'areas': areas_list
+            })
+            
+        return jsonify({
+            "success": True,
+            "site_url": site_url,
+            "area_queries": area_queries
+        })
+
+    except Exception as e:
+        error_message = str(e)
+        if "invalid_grant" in error_message or "401" in error_message:
+            return jsonify({"success": False, "error": "トークンが無効です", "error_type": "TOKEN_EXPIRED"}), 401
+        return jsonify({"success": False, "error": error_message}), 500
+
 @app.route('/gsc/pages')
 def get_gsc_pages():
     try:
