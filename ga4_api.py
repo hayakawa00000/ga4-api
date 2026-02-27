@@ -160,8 +160,8 @@ def get_ads_performance():
         for row in monthly_rows:
             m   = row.get('segments', {}).get('month', '')[:7]
             met = row.get('metrics', {})
-            monthly_map[m]['cost']        += met.get('costMicros', 0) / 1_000_000
-            monthly_map[m]['cv']          += met.get('conversions', 0)
+            monthly_map[m]['cost']        += int(met.get('costMicros', 0)) / 1_000_000
+            monthly_map[m]['cv']          += float(met.get('conversions', 0))
             monthly_map[m]['clicks']      += int(met.get('clicks', 0))
             monthly_map[m]['impressions'] += int(met.get('impressions', 0))
 
@@ -203,8 +203,8 @@ def get_ads_performance():
         for row in weekly_rows:
             w   = row.get('segments', {}).get('week', '')[:10]
             met = row.get('metrics', {})
-            weekly_map[w]['cost']        += met.get('costMicros', 0) / 1_000_000
-            weekly_map[w]['cv']          += met.get('conversions', 0)
+            weekly_map[w]['cost']        += int(met.get('costMicros', 0)) / 1_000_000
+            weekly_map[w]['cv']          += float(met.get('conversions', 0))
             weekly_map[w]['clicks']      += int(met.get('clicks', 0))
             weekly_map[w]['impressions'] += int(met.get('impressions', 0))
 
@@ -246,8 +246,8 @@ def get_ads_performance():
             m   = row.get('segments', {}).get('month', '')[:7]
             cam = row.get('campaign', {}).get('name', '')
             met = row.get('metrics', {})
-            cost   = round(met.get('costMicros', 0) / 1_000_000, 2)
-            cv     = round(met.get('conversions', 0), 2)
+            cost   = round(int(met.get('costMicros', 0)) / 1_000_000, 2)
+            cv     = round(float(met.get('conversions', 0)), 2)
             clicks = int(met.get('clicks', 0))
             imps   = int(met.get('impressions', 0))
             cpa    = round(cost / cv, 0) if cv > 0 else 0
