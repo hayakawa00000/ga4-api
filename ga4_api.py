@@ -101,7 +101,7 @@ def debug_google_ads():
 # Google Ads パフォーマンスデータ取得
 # ============================================================
 GOOGLE_ADS_LOGIN_CUSTOMER_ID = os.environ.get('GOOGLE_ADS_LOGIN_CUSTOMER_ID', '4264903488')  # MCC ID
-ADS_API_VERSION = 'v17'
+ADS_API_VERSION = 'v19'
 
 def query_ads(customer_id, gaql, login_customer_id=None):
     """Google Ads APIにGAQLクエリを送信してresultsを返す"""
