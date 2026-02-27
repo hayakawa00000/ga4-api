@@ -97,6 +97,186 @@ def debug_google_ads():
     except Exception as e:
         return jsonify({"error": str(e)})
 
+# ============================================================
+# Google Ads パフォーマンスデータ取得
+# ============================================================
+GOOGLE_ADS_LOGIN_CUSTOMER_ID = os.environ.get('GOOGLE_ADS_LOGIN_CUSTOMER_ID', '4264903488')  # MCC ID
+ADS_API_VERSION = 'v18'
+
+def query_ads(customer_id, gaql, login_customer_id=None):
+    """Google Ads APIにGAQLクエリを送信してresultsを返す"""
+    access_token = get_ads_access_token()
+    cid = customer_id.replace('-', '')
+    login_cid = (login_customer_id or GOOGLE_ADS_LOGIN_CUSTOMER_ID or cid).replace('-', '')
+    url = f"https://googleads.googleapis.com/{ADS_API_VERSION}/customers/{cid}/googleAds:search"
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'developer-token': GOOGLE_ADS_DEVELOPER_TOKEN,
+        'login-customer-id': login_cid,
+        'Content-Type': 'application/json'
+    }
+    resp = http_requests.post(url, headers=headers, json={'query': gaql})
+    if resp.status_code != 200:
+        raise Exception(f"Ads API Error {resp.status_code}: {resp.text[:500]}")
+    data = resp.json()
+    return data.get('results', [])
+
+@app.route('/ads/performance', methods=['GET', 'POST'])
+def get_ads_performance():
+    """
+    Google Ads月次・週次・キャンペーン別パフォーマンスを取得する。
+    パラメータ: customer_id, start_date, end_date
+    """
+    try:
+        if request.method == 'POST':
+            params = request.get_json(force=True, silent=True) or {}
+        else:
+            params = request.args
+
+        customer_id = str(params.get('customer_id', '')).replace('-', '')
+        start_date  = params.get('start_date', '')
+        end_date    = params.get('end_date', '')
+
+        if not customer_id or not start_date or not end_date:
+            return jsonify({"success": False, "error": "customer_id / start_date / end_date が必要です"}), 400
+
+        from collections import defaultdict
+
+        # --- 月次データ ---
+        monthly_gaql = f"""
+            SELECT
+                segments.month,
+                metrics.cost_micros,
+                metrics.conversions,
+                metrics.clicks,
+                metrics.impressions
+            FROM campaign
+            WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+            ORDER BY segments.month DESC
+        """
+        monthly_rows = query_ads(customer_id, monthly_gaql)
+
+        monthly_map = defaultdict(lambda: {'cost': 0.0, 'cv': 0.0, 'clicks': 0, 'impressions': 0})
+        for row in monthly_rows:
+            m   = row.get('segments', {}).get('month', '')[:7]
+            met = row.get('metrics', {})
+            monthly_map[m]['cost']        += met.get('costMicros', 0) / 1_000_000
+            monthly_map[m]['cv']          += met.get('conversions', 0)
+            monthly_map[m]['clicks']      += int(met.get('clicks', 0))
+            monthly_map[m]['impressions'] += int(met.get('impressions', 0))
+
+        ads_monthly = []
+        for ym in sorted(monthly_map.keys(), reverse=True):
+            d = monthly_map[ym]
+            cost = round(d['cost'], 2)
+            cv   = round(d['cv'], 2)
+            clicks = d['clicks']
+            imps   = d['impressions']
+            cpa  = round(cost / cv, 0) if cv > 0 else 0
+            cpc  = round(cost / clicks, 0) if clicks > 0 else 0
+            ctr  = round(clicks / imps, 4) if imps > 0 else 0
+            cvr  = round(cv / clicks, 4) if clicks > 0 else 0
+            parts = ym.split('-')
+            ym_jp = f"{parts[0]}年{int(parts[1])}月" if len(parts) == 2 else ym
+            ads_monthly.append({
+                'ym': ym_jp, 'ym_raw': ym,
+                'cost': cost, 'cv': cv, 'cpa': cpa,
+                'clicks': clicks, 'cpc': cpc,
+                'ctr': ctr, 'impressions': imps, 'cvr': cvr
+            })
+
+        # --- 週次データ ---
+        weekly_gaql = f"""
+            SELECT
+                segments.week,
+                metrics.cost_micros,
+                metrics.conversions,
+                metrics.clicks,
+                metrics.impressions
+            FROM campaign
+            WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+            ORDER BY segments.week DESC
+        """
+        weekly_rows = query_ads(customer_id, weekly_gaql)
+
+        weekly_map = defaultdict(lambda: {'cost': 0.0, 'cv': 0.0, 'clicks': 0, 'impressions': 0})
+        for row in weekly_rows:
+            w   = row.get('segments', {}).get('week', '')[:10]
+            met = row.get('metrics', {})
+            weekly_map[w]['cost']        += met.get('costMicros', 0) / 1_000_000
+            weekly_map[w]['cv']          += met.get('conversions', 0)
+            weekly_map[w]['clicks']      += int(met.get('clicks', 0))
+            weekly_map[w]['impressions'] += int(met.get('impressions', 0))
+
+        ads_weekly = []
+        for wk in sorted(weekly_map.keys(), reverse=True)[:12]:
+            d = weekly_map[wk]
+            cost = round(d['cost'], 2)
+            cv   = round(d['cv'], 2)
+            clicks = d['clicks']
+            imps   = d['impressions']
+            cpa  = round(cost / cv, 0) if cv > 0 else 0
+            cpc  = round(cost / clicks, 0) if clicks > 0 else 0
+            ctr  = round(clicks / imps, 4) if imps > 0 else 0
+            cvr  = round(cv / clicks, 4) if clicks > 0 else 0
+            ads_weekly.append({
+                'week': wk,
+                'cost': cost, 'cv': cv, 'cpa': cpa,
+                'clicks': clicks, 'cpc': cpc,
+                'ctr': ctr, 'impressions': imps, 'cvr': cvr
+            })
+
+        # --- キャンペーン別月次データ ---
+        campaign_gaql = f"""
+            SELECT
+                segments.month,
+                campaign.name,
+                metrics.cost_micros,
+                metrics.conversions,
+                metrics.clicks,
+                metrics.impressions
+            FROM campaign
+            WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+            ORDER BY segments.month DESC, metrics.cost_micros DESC
+        """
+        campaign_rows = query_ads(customer_id, campaign_gaql)
+
+        ads_campaigns = []
+        for row in campaign_rows:
+            m   = row.get('segments', {}).get('month', '')[:7]
+            cam = row.get('campaign', {}).get('name', '')
+            met = row.get('metrics', {})
+            cost   = round(met.get('costMicros', 0) / 1_000_000, 2)
+            cv     = round(met.get('conversions', 0), 2)
+            clicks = int(met.get('clicks', 0))
+            imps   = int(met.get('impressions', 0))
+            cpa    = round(cost / cv, 0) if cv > 0 else 0
+            cpc    = round(cost / clicks, 0) if clicks > 0 else 0
+            ctr    = round(clicks / imps, 4) if imps > 0 else 0
+            cvr    = round(cv / clicks, 4) if clicks > 0 else 0
+            parts  = m.split('-')
+            ym_jp  = f"{parts[0]}年{int(parts[1])}月" if len(parts) == 2 else m
+            ads_campaigns.append({
+                'ym': ym_jp, 'ym_raw': m, 'campaign': cam,
+                'cost': cost, 'cv': cv, 'cpa': cpa,
+                'clicks': clicks, 'cpc': cpc,
+                'ctr': ctr, 'impressions': imps, 'cvr': cvr
+            })
+
+        return jsonify({
+            "success": True,
+            "customer_id": customer_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            "ads_monthly": ads_monthly,
+            "ads_weekly": ads_weekly,
+            "ads_campaigns": ads_campaigns
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
 @app.route('/ga4/sessions')
 def get_sessions():
     try:
