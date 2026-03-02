@@ -691,19 +691,16 @@ def build_area_slide(slide, d, key, month_label):
              f"■ {label}　対象エリア: 設定された各商圏",
              font_size=9, bold=True, color=C_PRIMARY)
     
-    h = ["年月", "セッションの参照元/メディア", "市", "セッション", "セッション前月差分", "ユーザー", "ユーザー前月差分"]
+    h = ["セッションの参照元/メディア", "市", "セッション", "セッション前月差分", "ユーザー", "ユーザー前月差分"]
     r = []
-    # Split the comma-separated cities into individual lines
     for s in sources:
         city_str = s.get("city", "-")
-        # if there are multiple cities separated by commas or spaces
         cities = [c.strip() for c in city_str.replace("、", ",").split(",") if c.strip()]
         if not cities:
             cities = ["-"]
             
         for c in cities:
             r.append([
-                s.get("ym", label),
                 s["source_medium"],
                 c,
                 f"{s['sessions']:,}",
@@ -711,30 +708,9 @@ def build_area_slide(slide, d, key, month_label):
                 f"{s['total_users']:,}",
                 delta_str(s.get("total_users_delta"))
             ])
-            # To avoid duplicating counts across split cities incorrectly, we should only display the raw
-            # values if the node actually provided already broken-down data. 
-            # WAIT. The data provided by GA4 API in 'monthly_city_sources' is ALREADY separated by city!
-            # The issue is the Dify node might be concatenating them or we are aggregating them.
-            # Let's check `no_ads_test.json` or `report_data_test.json` to see how `area_traffic_1st` is structured.
-            # For now, just print the row as-is if it's already separated, else split. 
-            # Assuming the aggregation in Dify concatenated the cities:
-            # We can't safely divide the sessions here. We need to display exactly what's given. 
-            # So I will just widen the table to match P11.
-    
-    # Revised approach: Just widen the table and adjust number of rows.
-    r = []
-    for s in sources:
-        r.append([
-            s.get("ym", label),
-            s["source_medium"],
-            s.get("city", "-"),
-            f"{s['sessions']:,}",
-            delta_str(s.get("sessions_delta")),
-            f"{s['total_users']:,}",
-            delta_str(s.get("total_users_delta"))
-        ])
+            
     add_table(slide, 0.2, 0.90, 7.1, 4.10, h, r[:15], fs=8,
-              col_widths=[0.8, 1.6, 1.7, 0.7, 0.8, 0.7, 0.8])
+              col_widths=[2.0, 1.5, 0.9, 0.9, 0.9, 0.9])
 
 
 # ============================================================
@@ -830,9 +806,9 @@ def build_p15_ads_monthly(slide, d):
             f"{m.get('cvr',0):.2f}%" if m.get('cvr',0) > 2 else f"{m.get('cvr',0)*100:.2f}%" if m.get('cvr',0) < 1 else f"{m.get('cvr',0):.2f}%"
         ])
     add_table(slide, 0.2, 0.6, 7.1, 1.0, h, r, fs=8,
-              col_widths=[0.9, 0.85, 0.55, 0.55, 0.65, 0.55, 0.6, 0.75, 0.6])
+              col_widths=[1.1, 0.9, 0.6, 0.8, 0.8, 0.6, 0.7, 0.9, 0.7])
 
-    categories = [m["ym"] for m in ads_m]
+    categories = [m["ym"].replace("年", "/").replace("月", "") for m in ads_m]
 
     # --- 左側グラフ: コスト (Bar) ---
     add_text(slide, 0.2, 2.2, 3.0, 0.3, "コスト (Ads)\nby Month", font_size=9, color=C_SUBTEXT)
@@ -880,7 +856,7 @@ def build_p16_ads_weekly(slide, d):
     add_table(slide, 0.2, 0.5, 7.1, 1.0, h, r, fs=7,
               col_widths=[1.1, 0.8, 0.6, 0.6, 0.7, 0.6, 0.7, 1.1, 0.9])
 
-    categories = [m["week"][-5:] for m in ads_w] # use short dates like MM-DD
+    categories = [m["week"][-5:] + " " for m in ads_w] # use short dates, append space to make Plotly treat as string
 
     # --- 左側グラフ: 表示回数-クリック数 (Click=Bar, Imp=Line overlay) ---
     add_text(slide, 0.2, 3.2, 3.0, 0.2, "表示回数-クリック数 (Ads)", font_size=9, color=C_SUBTEXT)
@@ -963,7 +939,7 @@ def build_p17_ads_campaign(slide, d):
             f"{m.get('cvr',0):.2f}%" if m.get('cvr',0) > 2 else f"{m.get('cvr',0)*100:.2f}%" if m.get('cvr',0) < 1 else f"{m.get('cvr',0):.2f}%"
         ])
     add_table(slide, 0.2, 3.5, 7.1, 1.5, h, r, fs=7,
-              col_widths=[0.6, 1.4, 0.6, 0.5, 0.6, 0.6, 0.6, 0.7, 0.8, 0.7])
+              col_widths=[0.6, 1.8, 0.7, 0.5, 0.6, 0.6, 0.5, 0.6, 0.7, 0.5])
 
 
 # メイン

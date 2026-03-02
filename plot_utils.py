@@ -27,8 +27,9 @@ def _apply_common_layout(fig, width, height):
             x=0.5
         )
     )
-    # yaxis gridlines
+    # yaxis gridlines and discrete xaxis
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+    fig.update_xaxes(type='category')
     return fig
 
 def save_bar_chart(categories, bar_data, bar_name, filepath, width=400, height=280):
