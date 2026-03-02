@@ -19,10 +19,12 @@ from pptx.chart.data import CategoryChartData, ChartData
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_TICK_MARK, XL_TICK_LABEL_POSITION
 from pptx.oxml.ns import qn
 
+import plot_utils
+
 # ============================================================
 # テンプレートファイル
 # ============================================================
-TEMPLATE_FILE = "26年〇月デジマアクセル月次レポート_〇〇（〇〇店）.pptx"
+TEMPLATE_FILE = "template.pptx"
 
 # ============================================================
 # 定数（7.5" x 5.62" = 4:3 スライド）
@@ -327,20 +329,25 @@ def build_p4_summary(slide, d):
         bg, fg = BADGE_COLORS.get(badge, (C_LIGHT, C_TEXT))
         add_rect(slide, lx, ty, 3.31, 1.71, C_WHITE,
                  line_color=rgb(0xDD,0xDD,0xEE), lw=0.5)
-        add_text(slide, lx+0.1, ty+0.05, 2.5, 0.22,
-                 title, font_size=9, color=C_PRIMARY)
-        add_text(slide, lx+0.1, ty+0.28, 3.1, 0.38,
-                 value_str, font_size=20, bold=True, color=C_PRIMARY)
-        add_text(slide, lx+0.1, ty+0.68, 3.1, 0.2,
-                 sub_str, font_size=9, color=C_SUBTEXT)
-        add_text(slide, lx+0.1, ty+0.9, 3.1, 0.22,
-                 pct_str, font_size=10, bold=True, color=C_ACCENT)
-        # バッジ
-        add_rect(slide, lx+0.1, ty+1.15, 0.8, 0.28, bg)
-        add_text(slide, lx+0.1, ty+1.15, 0.8, 0.28,
-                 badge, font_size=9, bold=True, color=fg, align=PP_ALIGN.CENTER)
-        add_text(slide, lx+1.0, ty+1.18, 2.3, 0.25,
-                 badge_sub, font_size=9, color=C_SUBTEXT)
+        
+        # Title
+        add_text(slide, lx+0.1, ty+0.05, 3.0, 0.22, title, font_size=9, color=C_PRIMARY)
+        
+        # Value
+        add_text(slide, lx+0.1, ty+0.28, 1.5, 0.38, str(value_str), font_size=20, bold=True, color=C_PRIMARY)
+        
+        # Sub string (e.g. rate or prev month)
+        add_text(slide, lx+0.1, ty+0.7, 1.5, 0.2, sub_str, font_size=9, color=C_SUBTEXT)
+        
+        # Pct string (e.g. 前月比 -70.0%) - put it on the right
+        add_text(slide, lx+1.7, ty+0.25, 1.5, 0.22, pct_str, font_size=10, bold=True, color=C_PRIMARY)
+        
+        # Badge
+        add_rect(slide, lx+1.7, ty+0.5, 0.9, 0.28, bg)
+        add_text(slide, lx+1.7, ty+0.5, 0.9, 0.28, badge, font_size=9, bold=True, color=fg, align=PP_ALIGN.CENTER)
+        
+        # Long sub text spanning at bottom
+        add_text(slide, lx+0.1, ty+1.0, 3.1, 0.6, badge_sub, font_size=9, color=C_SUBTEXT)
 
     # 4カード: 左上/右上/左下/右下
     ss = s.get("sessions", {})
@@ -675,19 +682,30 @@ def build_area_slide(slide, d, key, month_label):
     slide_header(slide, f"分析：商圏内流入（{month_label}）（GA4）")
     sources = d.get(key,[])
     if not sources: return
-    label = sources[0].get("ym","")
-    city  = sources[0].get("city","")
+    label = sources[0].get("ym", month_label)
+    
+    # Check if we have multiple cities by seeing if 'city' exists in rows
+    # We display a generic target area title instead of a single parsed city.
     add_text(slide, 0.35, 0.62, 7.0, 0.25,
-             f"■ {label}　対象エリア: {city}",
+             f"■ {label}　対象エリア: 設定された各商圏",
              font_size=9, bold=True, color=C_PRIMARY)
-    h = ["参照元/メディア","セッション","セッション前月差分","ユーザー","ユーザー前月差分"]
-    r = [[s["source_medium"],
-          f"{s['sessions']:,}",
-          delta_str(s.get("sessions_delta")),
-          f"{s['total_users']:,}",
-          delta_str(s.get("total_users_delta"))] for s in sources]
-    add_table(slide, 0.35, 0.90, 7.1, 4.10, h, r[:15], fs=9,
-              col_widths=[1.7, 1.0, 1.7, 1.0, 1.7])
+    
+    h = ["年月", "セッションの参照元/メディア", "市", "セッション", "セッション前月差分", "ユーザー", "ユーザー前月差分"]
+    r = []
+    for s in sources:
+        # Determine if 'city' was passed from the new Dify format
+        city_name = s.get("city", "-")
+        r.append([
+            s.get("ym", label),
+            s["source_medium"],
+            city_name,
+            f"{s['sessions']:,}",
+            delta_str(s.get("sessions_delta")),
+            f"{s['total_users']:,}",
+            delta_str(s.get("total_users_delta"))
+        ])
+    add_table(slide, 0.35, 0.90, 7.1, 4.10, h, r[:15], fs=8,
+              col_widths=[0.8, 1.8, 0.9, 0.9, 0.9, 0.9, 0.9])
 
 
 # ============================================================
@@ -789,60 +807,18 @@ def build_p15_ads_monthly(slide, d):
 
     # --- 左側グラフ: コスト (Bar) ---
     add_text(slide, 0.2, 2.2, 3.0, 0.3, "コスト (Ads)\nby Month", font_size=9, color=C_SUBTEXT)
-    cd_cost = ChartData()
-    cd_cost.categories = categories
-    cd_cost.add_series('Cost', [m.get("cost", 0) for m in ads_m])
-    chart_cost = slide.shapes.add_chart(
-        XL_CHART_TYPE.COLUMN_CLUSTERED, inch(0.2), inch(2.5), inch(3.4), inch(2.8), cd_cost
-    ).chart
-    chart_cost.has_legend = False
-    chart_cost.value_axis.has_major_gridlines = True
-    format_chart_axes(chart_cost, fs=8)
-    chart_cost.plots[0].has_data_labels = False
-    for s in chart_cost.series:
-        s.format.fill.solid()
-        s.format.fill.fore_color.rgb = rgb(179, 226, 131) # Light green from screenshot
+    bar_data_cost = [m.get("cost", 0) for m in ads_m]
+    img_path_cost = "temp_chart_p15_cost.png"
+    plot_utils.save_bar_chart(categories, bar_data_cost, "Cost", img_path_cost, width=340, height=280)
+    slide.shapes.add_picture(img_path_cost, inch(0.2), inch(2.5), width=inch(3.4), height=inch(2.8))
 
     # --- 右側グラフ: CV / CVR (Combo: CV=Bar, CVR=Line) ---
     add_text(slide, 3.8, 2.2, 3.0, 0.3, "CV/CVR (Ads)\nby Month", font_size=9, color=C_SUBTEXT)
-    # Python-pptx doesn't natively support plotting on secondary axis easily without XML hacking.
-    # We will use the overlay method.
-    
-    # 1. Bar Chart (CV) on left axis
-    cd_cv = ChartData()
-    cd_cv.categories = categories
-    cd_cv.add_series('CV', [m.get("cv", 0) for m in ads_m])
-    chart_cv = slide.shapes.add_chart(
-        XL_CHART_TYPE.COLUMN_CLUSTERED, inch(3.8), inch(2.5), inch(3.4), inch(2.8), cd_cv
-    ).chart
-    chart_cv.has_legend = True
-    chart_cv.legend.position = XL_LEGEND_POSITION.BOTTOM
-    chart_cv.value_axis.has_major_gridlines = True
-    format_chart_axes(chart_cv, fs=8)
-    chart_cv.plots[0].has_data_labels = False
-    for s in chart_cv.series:
-        s.format.fill.solid()
-        s.format.fill.fore_color.rgb = rgb(179, 226, 131)
-
-    # 2. Line Chart (CVR) overlaid. Transparent background.
-    cd_cvr = ChartData()
-    cd_cvr.categories = categories
-    cd_cvr.add_series('CVR', [m.get("cvr", 0) for m in ads_m])
-    
-    chart_cvr_shape = slide.shapes.add_chart(
-        XL_CHART_TYPE.LINE, inch(3.8), inch(2.5), inch(3.4), inch(2.8), cd_cvr
-    )
-    chart_cvr = chart_cvr_shape.chart
-    chart_cvr.has_legend = True
-    chart_cvr.legend.position = XL_LEGEND_POSITION.RIGHT
-    chart_cvr.legend.font.size = Pt(8)
-    
-    make_chart_transparent(chart_cvr)
-    make_overlay_invisible(chart_cvr)
-    chart_cvr.plots[0].has_data_labels = False
-    
-    for s in chart_cvr.series:
-        s.format.line.color.rgb = rgb(105, 175, 230) # Light blue
+    bar_data_cv = [m.get("cv", 0) for m in ads_m]
+    line_data_cvr = [m.get("cvr", 0) for m in ads_m]
+    img_path_cv_cvr = "temp_chart_p15_cv_cvr.png"
+    plot_utils.save_combo_chart(categories, bar_data_cv, "CV", line_data_cvr, "CVR", img_path_cv_cvr, width=340, height=280)
+    slide.shapes.add_picture(img_path_cv_cvr, inch(3.8), inch(2.5), width=inch(3.4), height=inch(2.8)) # Light blue
 
 
 # ============================================================
@@ -873,81 +849,25 @@ def build_p16_ads_weekly(slide, d):
         ])
     # Table heights might overflow if many weeks. Assume ~10 weeks.
     add_table(slide, 0.2, 0.5, 7.1, 1.0, h, r, fs=6,
-              col_widths=[0.9, 0.85, 0.55, 0.55, 0.65, 0.55, 0.6, 0.75, 0.6])
+              col_widths=[1.1, 0.8, 0.6, 0.6, 0.7, 0.6, 0.7, 0.9, 0.7])
 
     categories = [m["week"][-5:] for m in ads_w] # use short dates like MM-DD
 
     # --- 左側グラフ: 表示回数-クリック数 (Click=Bar, Imp=Line overlay) ---
     add_text(slide, 0.2, 3.2, 3.0, 0.2, "表示回数-クリック数 (Ads)", font_size=9, color=C_SUBTEXT)
-    
-    # Bar Chart (CT)
-    cd_ct = ChartData()
-    cd_ct.categories = categories
-    cd_ct.add_series('CT', [m.get("clicks", 0) for m in ads_w])
-    chart_ct = slide.shapes.add_chart(
-        XL_CHART_TYPE.COLUMN_CLUSTERED, inch(0.2), inch(3.4), inch(3.4), inch(2.0), cd_ct
-    ).chart
-    chart_ct.has_legend = True
-    chart_ct.legend.position = XL_LEGEND_POSITION.BOTTOM
-    format_chart_axes(chart_ct, fs=7)
-    chart_ct.plots[0].has_data_labels = False
-    for s in chart_ct.series:
-        s.format.fill.solid()
-        s.format.fill.fore_color.rgb = rgb(179, 226, 131)
-
-    # Line Chart (Imp)
-    cd_imp = ChartData()
-    cd_imp.categories = categories
-    cd_imp.add_series('Imp', [m.get("impressions", 0) for m in ads_w])
-    chart_imp_shape = slide.shapes.add_chart(
-        XL_CHART_TYPE.LINE, inch(0.2), inch(3.4), inch(3.4), inch(2.0), cd_imp
-    )
-    chart_imp = chart_imp_shape.chart
-    chart_imp.has_legend = True
-    chart_imp.legend.position = XL_LEGEND_POSITION.RIGHT
-    chart_imp.legend.font.size = Pt(7)
-    
-    make_chart_transparent(chart_imp)
-    make_overlay_invisible(chart_imp)
-    chart_imp.plots[0].has_data_labels = False
-    
-    for s in chart_imp.series:
-        s.format.line.color.rgb = rgb(105, 175, 230)
+    bar_data_ct = [m.get("clicks", 0) for m in ads_w]
+    line_data_imp = [m.get("impressions", 0) for m in ads_w]
+    img_path_ct_imp = "temp_chart_p16_ct_imp.png"
+    plot_utils.save_combo_chart(categories, bar_data_ct, "Click", line_data_imp, "Imp", img_path_ct_imp, width=340, height=200)
+    slide.shapes.add_picture(img_path_ct_imp, inch(0.2), inch(3.4), width=inch(3.4), height=inch(2.0))
 
     # --- 右側グラフ: CV-CPA (CPA=Bar, CV=Line overlay) ---
     add_text(slide, 3.8, 3.2, 3.0, 0.2, "CV-CPA (Ads)", font_size=9, color=C_SUBTEXT)
-    
-    cd_cpa = ChartData()
-    cd_cpa.categories = categories
-    cd_cpa.add_series('CPA', [m.get("cpa", 0) for m in ads_w])
-    chart_cpa = slide.shapes.add_chart(
-        XL_CHART_TYPE.COLUMN_CLUSTERED, inch(3.8), inch(3.4), inch(3.4), inch(2.0), cd_cpa
-    ).chart
-    chart_cpa.has_legend = True
-    chart_cpa.legend.position = XL_LEGEND_POSITION.BOTTOM
-    format_chart_axes(chart_cpa, fs=7)
-    chart_cpa.plots[0].has_data_labels = False
-    for s in chart_cpa.series:
-        s.format.fill.solid()
-        s.format.fill.fore_color.rgb = rgb(179, 226, 131)
-
-    cd_cv = ChartData()
-    cd_cv.categories = categories
-    cd_cv.add_series('CV', [m.get("cv", 0) for m in ads_w])
-    chart_cv2_shape = slide.shapes.add_chart(
-        XL_CHART_TYPE.LINE, inch(3.8), inch(3.4), inch(3.4), inch(2.0), cd_cv
-    )
-    chart_cv2 = chart_cv2_shape.chart
-    chart_cv2.has_legend = True
-    chart_cv2.legend.position = XL_LEGEND_POSITION.RIGHT
-    chart_cv2.legend.font.size = Pt(7)
-    
-    make_chart_transparent(chart_cv2)
-    make_overlay_invisible(chart_cv2)
-    chart_cv2.plots[0].has_data_labels = False
-    
-    for s in chart_cv2.series:
-        s.format.line.color.rgb = rgb(105, 175, 230)
+    bar_data_cpa = [m.get("cpa", 0) for m in ads_w]
+    line_data_cv = [m.get("cv", 0) for m in ads_w]
+    img_path_cpa_cv = "temp_chart_p16_cpa_cv.png"
+    plot_utils.save_combo_chart(categories, bar_data_cpa, "CPA", line_data_cv, "CV", img_path_cpa_cv, width=340, height=200)
+    slide.shapes.add_picture(img_path_cpa_cv, inch(3.8), inch(3.4), width=inch(3.4), height=inch(2.0))
 
 
 # ============================================================
@@ -1013,7 +933,8 @@ def build_p17_ads_campaign(slide, d):
             f"{m.get('impressions',0):,}",
             f"{m.get('cvr',0):.2f}%" if m.get('cvr',0) > 2 else f"{m.get('cvr',0)*100:.2f}%" if m.get('cvr',0) < 1 else f"{m.get('cvr',0):.2f}%"
         ])
-    add_table(slide, 0.2, 3.5, 7.1, 1.5, h, r, fs=7)
+    add_table(slide, 0.2, 3.5, 7.1, 1.5, h, r, fs=7,
+              col_widths=[0.6, 1.4, 0.6, 0.5, 0.6, 0.6, 0.6, 0.7, 0.8, 0.7])
 
 
 # メイン
