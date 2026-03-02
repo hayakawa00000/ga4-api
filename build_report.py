@@ -57,8 +57,8 @@ BADGE_COLORS = {
 
 PROPOSAL_COLORS = {
     "red":    (RGBColor(0xFF, 0xEB, 0xEE), C_RED,    "🔴 最優先"),
-    "orange": (RGBColor(0xFF, 0xF3, 0xE0), C_ORANGE, "🟠 中期"),
-    "blue":   (RGBColor(0xE3, 0xF2, 0xFD), C_BLUE,   "🔵 長期"),
+    "orange": (RGBColor(0xFF, 0xF3, 0xE0), C_ORANGE, "🟠 優先"),
+    "blue":   (RGBColor(0xE3, 0xF2, 0xFD), C_BLUE,   "🔵 適宜"),
 }
 
 FONT_JP = "Meiryo UI"
