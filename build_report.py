@@ -598,7 +598,7 @@ def build_p8_analysis(slide, d):
     ]
     for idx, (title, items, fg, bg) in enumerate(secs):
         lx = 0.2 + idx * 3.7
-        add_rect(slide, lx, 0.62, 3.5, 4.4, bg)
+        add_rect(slide, lx, 0.62, 3.5, 4.8, bg)
         add_text(slide, lx+0.1, 0.67, 3.3, 0.28, title,
                  font_size=11, bold=True, color=fg)
         for j, item in enumerate(items):
@@ -641,11 +641,11 @@ def build_p10_pages(slide, d):
         label = pages[0].get("ym","") if pages else ""
         add_text(slide, lx, 0.62, 3.45, 0.25, f"■ {label}",
                  font_size=9, bold=True, color=C_PRIMARY)
-        h = ["ページパス","PV","滞在","ユーザー"]
+        h = ["ページパス","PV","滞在時間","ユーザー"]
         r = [[p["page_path"], f"{p['pageviews']:,}", p["duration"],
               f"{p['total_users']:,}"] for p in pages]
-        add_table(slide, lx, 0.90, 3.45, 4.10, h, r, fs=9,
-                  col_widths=[1.75,0.55,0.6,0.55])
+        add_table(slide, lx, 0.90, 3.45, 4.10, h, r[:10], fs=9,
+                  col_widths=[1.65,0.5,0.75,0.55])
 
 
 # ============================================================
@@ -658,14 +658,14 @@ def build_traffic_slide(slide, d, key, month_label):
     label = sources[0].get("ym","")
     add_text(slide, 0.35, 0.62, 5.0, 0.25, f"■ {label}",
              font_size=9, bold=True, color=C_PRIMARY)
-    h = ["参照元/メディア","SS","SS差分","ユーザー","ユーザー差分"]
+    h = ["参照元/メディア","セッション","セッション前月差分","ユーザー","ユーザー前月差分"]
     r = [[s["source_medium"],
           f"{s['sessions']:,}",
           delta_str(s.get("sessions_delta")),
           f"{s['total_users']:,}",
           delta_str(s.get("total_users_delta"))] for s in sources]
-    add_table(slide, 0.35, 0.90, 7.1, 4.10, h, r, fs=9,
-              col_widths=[2.0,1.25,1.25,1.25,1.25])
+    add_table(slide, 0.35, 0.90, 7.1, 4.10, h, r[:15], fs=9,
+              col_widths=[1.7, 1.0, 1.7, 1.0, 1.7])
 
 
 # ============================================================
@@ -680,14 +680,14 @@ def build_area_slide(slide, d, key, month_label):
     add_text(slide, 0.35, 0.62, 7.0, 0.25,
              f"■ {label}　対象エリア: {city}",
              font_size=9, bold=True, color=C_PRIMARY)
-    h = ["参照元/メディア","SS","SS差分","ユーザー","ユーザー差分"]
+    h = ["参照元/メディア","セッション","セッション前月差分","ユーザー","ユーザー前月差分"]
     r = [[s["source_medium"],
           f"{s['sessions']:,}",
           delta_str(s.get("sessions_delta")),
           f"{s['total_users']:,}",
           delta_str(s.get("total_users_delta"))] for s in sources]
-    add_table(slide, 0.35, 0.90, 7.1, 4.10, h, r, fs=9,
-              col_widths=[2.0,1.25,1.25,1.25,1.25])
+    add_table(slide, 0.35, 0.90, 7.1, 4.10, h, r[:15], fs=9,
+              col_widths=[1.7, 1.0, 1.7, 1.0, 1.7])
 
 
 # ============================================================
@@ -782,7 +782,8 @@ def build_p15_ads_monthly(slide, d):
             f"{m.get('impressions',0):,}",
             f"{m.get('cvr',0):.2f}%" if m.get('cvr',0) > 2 else f"{m.get('cvr',0)*100:.2f}%" if m.get('cvr',0) < 1 else f"{m.get('cvr',0):.2f}%"
         ])
-    add_table(slide, 0.2, 0.6, 7.1, 1.0, h, r, fs=8)
+    add_table(slide, 0.2, 0.6, 7.1, 1.0, h, r, fs=8,
+              col_widths=[0.9, 0.85, 0.55, 0.55, 0.65, 0.55, 0.6, 0.75, 0.6])
 
     categories = [m["ym"] for m in ads_m]
 
@@ -871,7 +872,8 @@ def build_p16_ads_weekly(slide, d):
             f"{m.get('cvr',0):.2f}%" if m.get('cvr',0) > 2 else f"{m.get('cvr',0)*100:.2f}%" if m.get('cvr',0) < 1 else f"{m.get('cvr',0):.2f}%"
         ])
     # Table heights might overflow if many weeks. Assume ~10 weeks.
-    add_table(slide, 0.2, 0.5, 7.1, 1.0, h, r, fs=6)
+    add_table(slide, 0.2, 0.5, 7.1, 1.0, h, r, fs=6,
+              col_widths=[0.9, 0.85, 0.55, 0.55, 0.65, 0.55, 0.6, 0.75, 0.6])
 
     categories = [m["week"][-5:] for m in ads_w] # use short dates like MM-DD
 
@@ -978,8 +980,11 @@ def build_p17_ads_campaign(slide, d):
     for c in top_camps:
         cd.add_series(c, [camp_dict[c][ym] for ym in ym_set])
 
+    add_text(slide, 0.2, 0.45, 5.0, 0.25, "キャンペーン指標推移（費用）",
+             font_size=10, bold=True, color=C_TEXT)
+
     chart_costs = slide.shapes.add_chart(
-        XL_CHART_TYPE.LINE, inch(0.2), inch(0.5), inch(7.1), inch(2.6), cd
+        XL_CHART_TYPE.LINE, inch(0.2), inch(0.7), inch(7.1), inch(2.4), cd
     ).chart
     chart_costs.has_legend = True
     chart_costs.legend.position = XL_LEGEND_POSITION.BOTTOM
