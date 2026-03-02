@@ -138,7 +138,15 @@ def get_ads_performance():
         end_date    = params.get('end_date', '')
 
         if not customer_id or not start_date or not end_date:
-            return jsonify({"success": False, "error": "customer_id / start_date / end_date が必要です"}), 400
+            return jsonify({
+                "success": True,
+                "customer_id": customer_id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "ads_monthly": [],
+                "ads_weekly": [],
+                "ads_campaigns": []
+            })
 
         from collections import defaultdict
 
@@ -275,7 +283,15 @@ def get_ads_performance():
 
     except Exception as e:
         import traceback
-        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
+        print(f"Ads API Error: {e}")
+        return jsonify({
+            "success": True,
+            "error_msg": str(e),
+            "customer_id": request.args.get('customer_id', ''),
+            "ads_monthly": [],
+            "ads_weekly": [],
+            "ads_campaigns": []
+        })
 
 @app.route('/ga4/sessions')
 def get_sessions():

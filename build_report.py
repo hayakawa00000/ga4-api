@@ -997,14 +997,15 @@ def main():
     print("P14 商圏内流入_前月 生成中...")
     build_area_slide(new_slide(), d, "area_traffic_2nd", "前月")
 
-    print("P15 広告基本指標(月次) 生成中...")
-    build_p15_ads_monthly(new_slide(), d)
+    if d.get("ads_monthly"):
+        print("P15 広告基本指標(月次) 生成中...")
+        build_p15_ads_monthly(new_slide(), d)
 
-    print("P16 広告基本指標(週次) 生成中...")
-    build_p16_ads_weekly(new_slide(), d)
+        print("P16 広告基本指標(週次) 生成中...")
+        build_p16_ads_weekly(new_slide(), d)
 
-    print("P17 キャンペーン指標推移 生成中...")
-    build_p17_ads_campaign(new_slide(), d)
+        print("P17 キャンペーン指標推移 生成中...")
+        build_p17_ads_campaign(new_slide(), d)
 
     # テンプレートのSlide3（雛形）を最後に削除
     from pptx.oxml.ns import qn
@@ -1062,9 +1063,10 @@ def generate(data: dict, template_path: str, output_path: str):
     build_traffic_slide(new_slide(), d, "traffic_sources_2nd", "前月")
     build_area_slide(new_slide(), d, "area_traffic_1st", "当月")
     build_area_slide(new_slide(), d, "area_traffic_2nd", "前月")
-    build_p15_ads_monthly(new_slide(), d)
-    build_p16_ads_weekly(new_slide(), d)
-    build_p17_ads_campaign(new_slide(), d)
+    if d.get("ads_monthly"):
+        build_p15_ads_monthly(new_slide(), d)
+        build_p16_ads_weekly(new_slide(), d)
+        build_p17_ads_campaign(new_slide(), d)
 
     # テンプレートのSlide3（雛形）を削除
     from pptx.oxml.ns import qn
