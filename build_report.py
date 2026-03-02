@@ -691,23 +691,17 @@ def build_area_slide(slide, d, key, month_label):
              f"■ {label}　対象エリア: 設定された各商圏",
              font_size=9, bold=True, color=C_PRIMARY)
     
-    h = ["セッションの参照元/メディア", "市", "セッション", "セッション前月差分", "ユーザー", "ユーザー前月差分"]
+    h = ["セッションの参照元/メディア", "対象エリア", "セッション", "セッション前月差分", "ユーザー", "ユーザー前月差分"]
     r = []
     for s in sources:
-        city_str = s.get("city", "-")
-        cities = [c.strip() for c in city_str.replace("、", ",").split(",") if c.strip()]
-        if not cities:
-            cities = ["-"]
-            
-        for c in cities:
-            r.append([
-                s["source_medium"],
-                c,
-                f"{s['sessions']:,}",
-                delta_str(s.get("sessions_delta")),
-                f"{s['total_users']:,}",
-                delta_str(s.get("total_users_delta"))
-            ])
+        r.append([
+            s["source_medium"],
+            s.get("city", "-"),
+            f"{s['sessions']:,}",
+            delta_str(s.get("sessions_delta")),
+            f"{s['total_users']:,}",
+            delta_str(s.get("total_users_delta"))
+        ])
             
     add_table(slide, 0.2, 0.90, 7.1, 4.10, h, r[:15], fs=8,
               col_widths=[2.0, 1.5, 0.9, 0.9, 0.9, 0.9])
@@ -811,19 +805,24 @@ def build_p15_ads_monthly(slide, d):
     categories = [m["ym"].replace("年", "/").replace("月", "") for m in ads_m]
 
     # --- 左側グラフ: コスト (Bar) ---
-    add_text(slide, 0.2, 2.2, 3.0, 0.3, "コスト (Ads)\nby Month", font_size=9, color=C_SUBTEXT)
-    bar_data_cost = [m.get("cost", 0) for m in ads_m]
-    img_path_cost = "temp_chart_p15_cost.png"
-    plot_utils.save_bar_chart(categories, bar_data_cost, "Cost", img_path_cost, width=340, height=280)
-    slide.shapes.add_picture(img_path_cost, inch(0.2), inch(2.5), width=inch(3.4), height=inch(2.8))
+    add_text(slide, 0.2, 2.0, 3.0, 0.3, "コスト (Ads)\nby Month", font_size=9, color=C_SUBTEXT)
+    fpath1 = "temp_chart_p15_cost.png"
+    plot_utils.save_bar_chart(
+        categories, [m.get("cost", 0) for m in ads_m], "Cost",
+        fpath1, width=320, height=220
+    )
+    slide.shapes.add_picture(fpath1, inch(0.2), inch(2.4), width=inch(3.3))
 
-    # --- 右側グラフ: CV / CVR (Combo: CV=Bar, CVR=Line) ---
-    add_text(slide, 3.8, 2.2, 3.0, 0.3, "CV/CVR (Ads)\nby Month", font_size=9, color=C_SUBTEXT)
-    bar_data_cv = [m.get("cv", 0) for m in ads_m]
-    line_data_cvr = [m.get("cvr", 0) for m in ads_m]
-    img_path_cv_cvr = "temp_chart_p15_cv_cvr.png"
-    plot_utils.save_combo_chart(categories, bar_data_cv, "CV", line_data_cvr, "CVR", img_path_cv_cvr, width=340, height=280)
-    slide.shapes.add_picture(img_path_cv_cvr, inch(3.8), inch(2.5), width=inch(3.4), height=inch(2.8)) # Light blue
+    # --- 右側グラフ: CV・CVR (Line+Bar combo) ---
+    add_text(slide, 3.6, 2.0, 3.0, 0.3, "CV・CVR (Ads)\nby Month", font_size=9, color=C_SUBTEXT)
+    fpath2 = "temp_chart_p15_cv_cvr.png"
+    plot_utils.save_combo_chart(
+        categories,
+        [m["cv"] for m in ads_m], "CV",
+        [m["cvr"] for m in ads_m], "CVR",
+        fpath2, width=320, height=220
+    )
+    slide.shapes.add_picture(fpath2, inch(3.6), inch(2.4), width=inch(3.3), height=inch(2.8)) # Light blue
 
 
 # ============================================================
@@ -859,20 +858,26 @@ def build_p16_ads_weekly(slide, d):
     categories = [m["week"][-5:] + " " for m in ads_w] # use short dates, append space to make Plotly treat as string
 
     # --- 左側グラフ: 表示回数-クリック数 (Click=Bar, Imp=Line overlay) ---
-    add_text(slide, 0.2, 3.2, 3.0, 0.2, "表示回数-クリック数 (Ads)", font_size=9, color=C_SUBTEXT)
-    bar_data_ct = [m.get("clicks", 0) for m in ads_w]
-    line_data_imp = [m.get("impressions", 0) for m in ads_w]
-    img_path_ct_imp = "temp_chart_p16_ct_imp.png"
-    plot_utils.save_combo_chart(categories, bar_data_ct, "Click", line_data_imp, "Imp", img_path_ct_imp, width=340, height=200)
-    slide.shapes.add_picture(img_path_ct_imp, inch(0.2), inch(3.4), width=inch(3.4), height=inch(2.0))
+    add_text(slide, 0.2, 2.8, 3.0, 0.2, "表示回数-クリック数 (Ads)", font_size=9, color=C_SUBTEXT)
+    fpath1 = "temp_chart_p16_ct_imp.png"
+    plot_utils.save_combo_chart(
+        categories,
+        [m["clicks"] for m in ads_w], "Click",
+        [m["impressions"] for m in ads_w], "Imp",
+        fpath1, width=320, height=180
+    )
+    slide.shapes.add_picture(fpath1, inch(0.2), inch(3.1), width=inch(3.3))
 
-    # --- 右側グラフ: CV-CPA (CPA=Bar, CV=Line overlay) ---
-    add_text(slide, 3.8, 3.2, 3.0, 0.2, "CV-CPA (Ads)", font_size=9, color=C_SUBTEXT)
-    bar_data_cpa = [m.get("cpa", 0) for m in ads_w]
-    line_data_cv = [m.get("cv", 0) for m in ads_w]
-    img_path_cpa_cv = "temp_chart_p16_cpa_cv.png"
-    plot_utils.save_combo_chart(categories, bar_data_cpa, "CPA", line_data_cv, "CV", img_path_cpa_cv, width=340, height=200)
-    slide.shapes.add_picture(img_path_cpa_cv, inch(3.8), inch(3.4), width=inch(3.4), height=inch(2.0))
+    # --- 右側グラフ: CV-CPA ---
+    add_text(slide, 3.6, 2.8, 3.0, 0.2, "CV-CPA (Ads)", font_size=9, color=C_SUBTEXT)
+    fpath2 = "temp_chart_p16_cpa_cv.png"
+    plot_utils.save_combo_chart(
+        categories,
+        [m["cpa"] for m in ads_w], "CPA",
+        [m["cv"] for m in ads_w], "CV",
+        fpath2, width=320, height=180
+    )
+    slide.shapes.add_picture(fpath2, inch(3.6), inch(3.1), width=inch(3.3), height=inch(2.0))
 
 
 # ============================================================
@@ -926,20 +931,21 @@ def build_p17_ads_campaign(slide, d):
     latest_camps = [m for m in ads_c if m["ym_raw"] == latest_ym]
     
     for m in latest_camps:
+        short_ym = m["ym"].replace("年", "/").replace("月", "")
         r.append([
-            m["ym"],
-            m["campaign"][:15] + ".." if len(m["campaign"]) > 15 else m["campaign"],  # truncate long names
-            f"{m.get('cost',0):,.2f}" if isinstance(m.get('cost'), float) else f"{m.get('cost',0):,}",
-            f"{m.get('cv',0):,.2f}",
-            f"{m.get('cpa',0):,.0f}" if m.get('cv',0) > 0 else "",
+            short_ym,
+            m["campaign"],
+            f"{m.get('cost',0):,.0f}",
+            f"{m.get('cv',0):.2f}",
+            f"{m.get('cpa',0):,.0f}" if m.get('cpa') else "",
             f"{m.get('clicks',0):,}",
-            f"{m.get('cpc',0):,.0f}",
-            f"{m.get('ctr',0):.2f}%" if m.get('ctr',0) > 2 else f"{m.get('ctr',0)*100:.2f}%" if m.get('ctr',0) < 1 else f"{m.get('ctr',0):.2f}%",
+            f"{m.get('cpc',0):,.0f}" if m.get('cpc') else "",
+            f"{m.get('ctr',0)*100:.2f}%",
             f"{m.get('impressions',0):,}",
             f"{m.get('cvr',0):.2f}%" if m.get('cvr',0) > 2 else f"{m.get('cvr',0)*100:.2f}%" if m.get('cvr',0) < 1 else f"{m.get('cvr',0):.2f}%"
         ])
     add_table(slide, 0.2, 3.5, 7.1, 1.5, h, r, fs=7,
-              col_widths=[0.6, 1.8, 0.7, 0.5, 0.6, 0.6, 0.5, 0.6, 0.7, 0.5])
+              col_widths=[0.6, 2.0, 0.7, 0.45, 0.65, 0.5, 0.45, 0.55, 0.7, 0.5])
 
 
 # メイン
