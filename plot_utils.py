@@ -17,12 +17,12 @@ def _apply_common_layout(fig, width, height):
         template="simple_white",
         width=width,
         height=height,
-        margin=dict(l=10, r=10, t=10, b=10),
+        margin=dict(l=10, r=30, t=10, b=40),
         font=dict(family=FONT_FAMILY, size=10),
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=-0.2,
+            y=-0.4,
             xanchor="center",
             x=0.5
         )
