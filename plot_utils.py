@@ -5,7 +5,7 @@ from plotly.subplots import make_subplots
 # PPTXにあわせたカラー設定
 COLOR_BAR = "rgb(179, 226, 131)"
 COLOR_LINE = "rgb(105, 175, 230)"
-FONT_FAMILY = "Meiryo, MS Gothic, sans-serif"
+FONT_FAMILY = "Arial, Helvetica, sans-serif"  # Standard fonts usually supported without issue by kaleido
 
 def ensure_dir(filepath):
     dirname = os.path.dirname(filepath)

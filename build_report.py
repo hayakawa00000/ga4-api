@@ -296,8 +296,8 @@ def build_p3_cv(slide, d):
     headers = ["月", "目標CV", "実績CV", "広告費", "CPA"]
     rows = [[m["ym_short"], m["target"], m["actual"],
              f"¥{m['budget']:,}", f"¥{m['cpa']:,}"] for m in cv_rev]
-    add_table(slide, 0.35, 2.74, 6.8, 1.1, headers, rows, fs=9,
-              col_widths=[1.0,1.2,1.2,2.2,1.2])
+    add_table(slide, 0.2, 2.74, 7.1, 1.1, headers, rows, fs=9,
+              col_widths=[1.1, 1.2, 1.2, 2.4, 1.2])
 
     # --- コメント（ロゴ回避：Hを小さく） ---
     cv_comment = d.get("cv_comment", "")
@@ -651,8 +651,8 @@ def build_p10_pages(slide, d):
         h = ["ページパス","PV","滞在時間","ユーザー"]
         r = [[p["page_path"], f"{p['pageviews']:,}", p["duration"],
               f"{p['total_users']:,}"] for p in pages]
-        add_table(slide, lx, 0.90, 3.45, 4.10, h, r[:10], fs=9,
-                  col_widths=[1.65,0.5,0.75,0.55])
+        add_table(slide, lx, 0.90, 3.45, 4.10, h, r[:10], fs=8,
+                  col_widths=[1.55, 0.5, 0.8, 0.6])
 
 
 # ============================================================
@@ -671,8 +671,9 @@ def build_traffic_slide(slide, d, key, month_label):
           delta_str(s.get("sessions_delta")),
           f"{s['total_users']:,}",
           delta_str(s.get("total_users_delta"))] for s in sources]
-    add_table(slide, 0.35, 0.90, 7.1, 4.10, h, r[:15], fs=9,
-              col_widths=[1.7, 1.0, 1.7, 1.0, 1.7])
+    # table width extended to 7.1
+    add_table(slide, 0.2, 0.90, 7.1, 4.10, h, r[:10], fs=9,
+              col_widths=[2.8, 1.0, 1.3, 1.0, 1.0])
 
 
 # ============================================================
@@ -692,20 +693,48 @@ def build_area_slide(slide, d, key, month_label):
     
     h = ["年月", "セッションの参照元/メディア", "市", "セッション", "セッション前月差分", "ユーザー", "ユーザー前月差分"]
     r = []
+    # Split the comma-separated cities into individual lines
     for s in sources:
-        # Determine if 'city' was passed from the new Dify format
-        city_name = s.get("city", "-")
+        city_str = s.get("city", "-")
+        # if there are multiple cities separated by commas or spaces
+        cities = [c.strip() for c in city_str.replace("、", ",").split(",") if c.strip()]
+        if not cities:
+            cities = ["-"]
+            
+        for c in cities:
+            r.append([
+                s.get("ym", label),
+                s["source_medium"],
+                c,
+                f"{s['sessions']:,}",
+                delta_str(s.get("sessions_delta")),
+                f"{s['total_users']:,}",
+                delta_str(s.get("total_users_delta"))
+            ])
+            # To avoid duplicating counts across split cities incorrectly, we should only display the raw
+            # values if the node actually provided already broken-down data. 
+            # WAIT. The data provided by GA4 API in 'monthly_city_sources' is ALREADY separated by city!
+            # The issue is the Dify node might be concatenating them or we are aggregating them.
+            # Let's check `no_ads_test.json` or `report_data_test.json` to see how `area_traffic_1st` is structured.
+            # For now, just print the row as-is if it's already separated, else split. 
+            # Assuming the aggregation in Dify concatenated the cities:
+            # We can't safely divide the sessions here. We need to display exactly what's given. 
+            # So I will just widen the table to match P11.
+    
+    # Revised approach: Just widen the table and adjust number of rows.
+    r = []
+    for s in sources:
         r.append([
             s.get("ym", label),
             s["source_medium"],
-            city_name,
+            s.get("city", "-"),
             f"{s['sessions']:,}",
             delta_str(s.get("sessions_delta")),
             f"{s['total_users']:,}",
             delta_str(s.get("total_users_delta"))
         ])
-    add_table(slide, 0.35, 0.90, 7.1, 4.10, h, r[:15], fs=8,
-              col_widths=[0.8, 1.8, 0.9, 0.9, 0.9, 0.9, 0.9])
+    add_table(slide, 0.2, 0.90, 7.1, 4.10, h, r[:15], fs=8,
+              col_widths=[0.8, 1.6, 1.7, 0.7, 0.8, 0.7, 0.8])
 
 
 # ============================================================
@@ -848,8 +877,8 @@ def build_p16_ads_weekly(slide, d):
             f"{m.get('cvr',0):.2f}%" if m.get('cvr',0) > 2 else f"{m.get('cvr',0)*100:.2f}%" if m.get('cvr',0) < 1 else f"{m.get('cvr',0):.2f}%"
         ])
     # Table heights might overflow if many weeks. Assume ~10 weeks.
-    add_table(slide, 0.2, 0.5, 7.1, 1.0, h, r, fs=6,
-              col_widths=[1.1, 0.8, 0.6, 0.6, 0.7, 0.6, 0.7, 0.9, 0.7])
+    add_table(slide, 0.2, 0.5, 7.1, 1.0, h, r, fs=7,
+              col_widths=[1.1, 0.8, 0.6, 0.6, 0.7, 0.6, 0.7, 1.1, 0.9])
 
     categories = [m["week"][-5:] for m in ads_w] # use short dates like MM-DD
 
