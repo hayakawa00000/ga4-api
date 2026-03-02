@@ -250,6 +250,16 @@ def edit_p1_cover(slide, d):
 # ============================================================
 def build_p3_cv(slide, d):
     slide_header(slide, "実績比較（CV・CPA）")
+    period_1st = d.get("period_1st", "")
+    if period_1st:
+        import re
+        m = re.search(r'(\d+)年(\d+)月.*?(\d+)-(\d+)-(\d+)', period_1st)
+        if m:
+            p_str = f"{m.group(1)}/{m.group(2)}/1～{m.group(3)}/{int(m.group(4))}/{int(m.group(5))}"
+        else:
+            p_str = period_1st.replace(" - ", "～").replace("-", "～")
+        add_text(slide, 3.2, 0.10, 4.0, 0.25, f"【対象期間：{p_str}】",
+                 font_size=11, bold=True, color=C_TEXT)
     cv = d.get("cv_months", [])
 
     cv_rev = list(reversed(cv))
@@ -272,9 +282,13 @@ def build_p3_cv(slide, d):
                  ("広告費", f"¥{m.get('budget',0):,}"), ("CPA", f"¥{m.get('cpa',0):,}")]
         for j,(k,v) in enumerate(items):
             yt = ty + 0.6 + j*0.3
+            cval = C_TEXT 
+            if k == "CPA":
+                cpa_val = m.get('cpa',0)
+                cval = C_GREEN if cpa_val <= 50000 else C_RED
             add_text(slide, lx+0.08, yt, 1.0, 0.25, k+":", font_size=9, color=C_SUBTEXT)
             add_text(slide, lx+1.05, yt, 0.9, 0.25, v, font_size=9, bold=True,
-                     color=C_TEXT, align=PP_ALIGN.RIGHT)
+                     color=cval, align=PP_ALIGN.RIGHT)
 
     # --- CVテーブル（下部）スライド幅7.15"以内 ---
     headers = ["月", "目標CV", "実績CV", "広告費", "CPA"]
@@ -299,7 +313,12 @@ def build_p4_summary(slide, d):
     slide_header(slide, "全体サマリー")
     period_1st = d.get("period_1st", "")
     if period_1st:
-        p_str = period_1st.replace(" - ", "～").replace("-", "～")
+        import re
+        m = re.search(r'(\d+)年(\d+)月.*?(\d+)-(\d+)-(\d+)', period_1st)
+        if m:
+            p_str = f"{m.group(1)}/{m.group(2)}/1～{m.group(3)}/{int(m.group(4))}/{int(m.group(5))}"
+        else:
+            p_str = period_1st.replace(" - ", "～").replace("-", "～")
         add_text(slide, 1.8, 0.10, 4.0, 0.25, f"【対象期間：{p_str}】",
                  font_size=11, bold=True, color=C_TEXT)
     s = d.get("summary", {})
@@ -372,31 +391,31 @@ def build_p5_detail(slide, d):
     # テーブル1: 全体指標
     add_text(slide, 0.35, 0.50, 4.0, 0.25, "■ 全体指標（3ヶ月）",
              font_size=9, bold=True, color=C_PRIMARY)
-    h1 = ["月","SS","ユーザー","新規","PV","直帰率","滞在"]
+    h1 = ["月","セッション","ユーザー","PV","直帰率","滞在時間"]
     r1 = [[m["ym_short"], f"{m['sessions']:,}", f"{m['users']:,}",
-           f"{m['new_users']:,}", f"{m['pvs']:,}",
+           f"{m['pvs']:,}",
            f"{m['bounce']}%", m["duration"]] for m in ga_rev]
     add_table(slide, 0.35, 0.72, 6.9, 0.9, h1, r1, fs=9,
-              col_widths=[0.85,1.0,1.0,1.0,1.0,1.0,1.05])
+              col_widths=[0.85,1.15,1.15,1.15,1.2,1.4])
 
     # テーブル2: 流入元5分類
     add_text(slide, 0.35, 1.72, 4.0, 0.25, "■ 流入元内訳（5分類）",
              font_size=9, bold=True, color=C_PRIMARY)
-    h2 = ["月","organic","cpc","direct","referral","social"]
+    h2 = ["月","自然流入","広告流入","直接流入","被リンク流入","SNS流入"]
     r2 = [[m["ym_short"], m["organic"], m["cpc"],
            m["direct"], m["referral"], m["social"]] for m in ga_rev]
     add_table(slide, 0.35, 1.94, 6.7, 0.9, h2, r2, fs=9,
-              col_widths=[0.85,1.05,1.05,1.05,1.05,1.1])
+              col_widths=[0.85,1.1,1.1,1.1,1.1,1.15])
 
     # テーブル3: 商圏・問合・デバイス
     add_text(slide, 0.35, 2.94, 4.0, 0.25, "■ 商圏・問い合わせ・デバイス",
              font_size=9, bold=True, color=C_PRIMARY)
-    h3 = ["月","商圏SS","商圏率","問合遷移","問合率","モバイル%","PC%"]
+    h3 = ["月","商圏セッション","商圏率","問合遷移","問合率","モバイル%","PC%"]
     r3 = [[m["ym_short"], f"{m['area_sessions']:,}", f"{m['area_rate']}%",
            f"{m['inquiry_views']:,}", f"{m['inquiry_rate']}%",
            f"{m.get('mobile','-')}%", f"{m.get('desktop','-')}%"] for m in ga_rev]
     add_table(slide, 0.35, 3.16, 6.9, 0.9, h3, r3, fs=9,
-              col_widths=[0.85,0.95,0.85,1.0,0.85,1.1,1.0])
+              col_widths=[0.85,1.05,0.75,1.0,0.75,1.1,1.0])
 
 # ============================================================
 # P6: 月別GA4分析（問合せページ内訳 / 商圏市区町村別SS / キーイベント 各3ヶ月結合テーブル）
@@ -407,7 +426,7 @@ def build_p6_ga4(slide, d):
     ga_rev = list(reversed(ga))  # 新しい月を左/上に
 
     # --- 問い合わせページ内訳（結合テーブル）---
-    add_text(slide, 0.35, 0.50, 4.5, 0.25, "■ 問い合わせページ内訳",
+    add_text(slide, 0.35, 0.50, 3.3, 0.25, "■ 問い合わせページ内訳",
              font_size=9, bold=True, color=C_PRIMARY)
     all_paths = []
     seen_paths = set()
@@ -424,11 +443,11 @@ def build_p6_ga4(slide, d):
             v = pm.get(path, 0)
             row.append(f"{v:,}" if v else "-")
         r_iq.append(row)
-    add_table(slide, 0.35, 0.75, 4.5, 0.88, h_iq, r_iq, fs=9,
-              col_widths=[2.0]+[0.83]*len(ga))
+    add_table(slide, 0.35, 0.75, 3.2, 0.88, h_iq, r_iq[:3], fs=9,
+              col_widths=[1.55]+[0.55]*len(ga))
 
     # --- 商圏内 市区町村別SS（列順 = 新しい月が左）---
-    add_text(slide, 0.35, 1.97, 4.5, 0.25, "■ 商圏内 市区町村別SS",
+    add_text(slide, 0.35, 1.97, 3.3, 0.25, "■ 商圏内 市区町村別SS",
              font_size=9, bold=True, color=C_PRIMARY)
     all_cities = []
     seen = set()
@@ -444,11 +463,11 @@ def build_p6_ga4(slide, d):
             cm = {c["city"]: c["sessions"] for c in m.get("area_by_city",[])}
             row.append(f"{cm.get(city,0):,}")
         r_city.append(row)
-    add_table(slide, 0.35, 2.20, 4.5, 1.0, h_city, r_city, fs=9,
-              col_widths=[2.0]+[0.83]*len(ga))
+    add_table(slide, 0.35, 2.20, 3.2, 1.0, h_city, r_city[:8], fs=9,
+              col_widths=[1.55]+[0.55]*len(ga))
 
     # --- キーイベント内訳（結合テーブル）---
-    add_text(slide, 0.35, 3.32, 4.5, 0.25, "■ キーイベント内訳",
+    add_text(slide, 3.8, 0.50, 3.3, 0.25, "■ キーイベント内訳",
              font_size=9, bold=True, color=C_PRIMARY)
     all_events = []
     seen_events = set()
@@ -473,8 +492,8 @@ def build_p6_ga4(slide, d):
             row.append(f"{v:,}" if v else "-")
         r_ke.append(row)
     
-    add_table(slide, 0.35, 3.57, 4.5, 1.4, h_ke, r_ke, fs=9,
-              col_widths=[2.0]+[0.83]*len(ga))
+    add_table(slide, 3.8, 0.75, 3.2, 1.4, h_ke, r_ke[:15], fs=9,
+              col_widths=[1.55]+[0.55]*len(ga))
 
 
 # ============================================================
@@ -503,13 +522,13 @@ def build_p7_gsc(slide, d):
             r_q = [[q["query"], q["clicks"], q["imps"],
                     f"{q['ctr']:.1f}%", f"{q['pos']:.1f}"]
                    for q in m.get("queries",[])]
-            add_table(slide, lx, 1.97, 3.4, 3.35, h_q, r_q, fs=9,
-                      col_widths=[1.75,0.4,0.45,0.4,0.4])
+            add_table(slide, lx, 1.97, 3.4, 3.35, h_q, r_q[:7], fs=9,
+                      col_widths=[1.3,0.45,0.55,0.6,0.5])
 
 # ============================================================
 # P7.5: 商圏サーチコンソール分析
 # ============================================================
-def build_p7_5_gsc_area(slide, d):
+def build_p7_5_gsc_area(slide, d, new_slide_fn=None):
     slide_header(slide, "商圏サーチコンソール分析")
     area_gsc = d.get("gsc_area_monthly", [])
     if not area_gsc:
@@ -521,13 +540,8 @@ def build_p7_5_gsc_area(slide, d):
     if len(area_gsc) > 1:
         valid_months.append((area_gsc[1], "前月"))
 
-    for idx, (m, label) in enumerate(valid_months):
-        lx = 0.35 + idx * 3.55
-        add_text(slide, lx, 0.50, 3.4, 0.25,
-                 f"■ 商圏クエリ実績（{m.get('ym_short','')}:{label}）",
-                 font_size=9, bold=True, color=C_PRIMARY)
-        
-        h_q = ["クエリ","CL","Imp","CTR","順位"]
+    all_rows = []
+    for m, label in valid_months:
         r_q = []
         for a in m.get("areas", []):
             for q in a.get("queries", []):
@@ -538,12 +552,38 @@ def build_p7_5_gsc_area(slide, d):
                     f"{q['ctr']:.1f}%", 
                     f"{q['position']:.1f}"
                 ])
+        all_rows.append((m, label, r_q))
+        
+    max_rows = max([len(rows) for _, _, rows in all_rows]) if all_rows else 0
+    pages = (max_rows + 7) // 8
+    if pages == 0: pages = 1
+
+    current_slide = slide
+    for page_idx in range(pages):
+        if page_idx > 0:
+            if new_slide_fn:
+                current_slide = new_slide_fn()
+                slide_header(current_slide, "商圏サーチコンソール分析（続き）")
+            else:
+                break
                 
-        if r_q:
-            add_table(slide, lx, 0.72, 3.4, 4.3, h_q, r_q, fs=9,
-                      col_widths=[1.75, 0.4, 0.45, 0.4, 0.4])
-        else:
-            add_text(slide, lx, 0.72, 3.4, 0.5, "表示するクエリがありません", font_size=9, color=C_TEXT)
+        start_idx = page_idx * 8
+        end_idx = start_idx + 8
+        
+        for idx, (m, label, r_q) in enumerate(all_rows):
+            lx = 0.35 + idx * 3.55
+            add_text(current_slide, lx, 0.50, 3.4, 0.25,
+                     f"■ 商圏クエリ実績（{m.get('ym_short','')}:{label}）",
+                     font_size=9, bold=True, color=C_PRIMARY)
+            
+            h_q = ["クエリ","CL","Imp","CTR","順位"]
+            page_rows = r_q[start_idx:end_idx]
+                    
+            if page_rows:
+                add_table(current_slide, lx, 0.72, 3.4, 4.3, h_q, page_rows, fs=9,
+                          col_widths=[1.3,0.45,0.55,0.6,0.5])
+            else:
+                add_text(current_slide, lx, 0.72, 3.4, 0.5, "表示するクエリがありません", font_size=9, color=C_TEXT)
 
 # ============================================================
 # P8: 当月分析
@@ -1008,7 +1048,7 @@ def main():
     build_p7_gsc(new_slide(), d)
 
     print("P7.5 商圏GSC分析 生成中...")
-    build_p7_5_gsc_area(new_slide(), d)
+    build_p7_5_gsc_area(new_slide(), d, new_slide_fn=new_slide)
 
     print("P8 当月分析 生成中...")
     build_p8_analysis(new_slide(), d)
@@ -1088,7 +1128,7 @@ def generate(data: dict, template_path: str, output_path: str):
     build_p5_detail(new_slide(), d)
     build_p6_ga4(new_slide(), d)
     build_p7_gsc(new_slide(), d)
-    build_p7_5_gsc_area(new_slide(), d)
+    build_p7_5_gsc_area(new_slide(), d, new_slide_fn=new_slide)
     build_p8_analysis(new_slide(), d)
     build_p9_proposals(new_slide(), d)
     build_p10_pages(new_slide(), d)
