@@ -615,6 +615,36 @@ def get_monthly():
                 break
             offset += page_size
 
+        # 月別×都市×流入元（ページネーション対応）
+        monthly_city_sources = []
+        offset = 0
+        while True:
+            city_src_response = client.run_report(RunReportRequest(
+                property=f"properties/{property_id}",
+                date_ranges=[{"start_date": start_date, "end_date": end_date}],
+                dimensions=[{"name": "yearMonth"}, {"name": "city"}, {"name": "sessionSource"}, {"name": "sessionMedium"}],
+                metrics=[{"name": "sessions"}, {"name": "activeUsers"}],
+                order_bys=[
+                    {"dimension": {"dimension_name": "yearMonth"}, "desc": False},
+                    {"metric": {"metric_name": "sessions"}, "desc": True}
+                ],
+                limit=page_size,
+                offset=offset
+            ))
+            for row in city_src_response.rows:
+                ym = row.dimension_values[0].value
+                monthly_city_sources.append({
+                    "year_month": f"{ym[:4]}-{ym[4:]}",
+                    "city": row.dimension_values[1].value,
+                    "source": row.dimension_values[2].value,
+                    "medium": row.dimension_values[3].value,
+                    "sessions": int(row.metric_values[0].value),
+                    "users": int(row.metric_values[1].value)
+                })
+            if len(city_src_response.rows) < page_size:
+                break
+            offset += page_size
+
         return jsonify({
             "success": True,
             "property_id": property_id,
@@ -624,7 +654,8 @@ def get_monthly():
             "monthly_sources": monthly_sources,
             "monthly_cities": monthly_cities,
             "monthly_devices": monthly_devices,
-            "monthly_pages": monthly_pages
+            "monthly_pages": monthly_pages,
+            "monthly_city_sources": monthly_city_sources
         })
 
     except Exception as e:
