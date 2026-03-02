@@ -15,6 +15,9 @@ from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from lxml import etree
+from pptx.chart.data import CategoryChartData, ChartData
+from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_TICK_MARK, XL_TICK_LABEL_POSITION
+from pptx.oxml.ns import qn
 
 # ============================================================
 # テンプレートファイル
@@ -648,6 +651,326 @@ def build_area_slide(slide, d, key, month_label):
 
 
 # ============================================================
+def make_chart_transparent(chart):
+    # For chart shape (graphic frame)
+    spPr = chart._chartSpace.find(qn('c:spPr'))
+    if spPr is None:
+        spPr = chart._chartSpace.makeelement(qn('c:spPr'))
+        chart._chartSpace.append(spPr)
+    noFill = spPr.find(qn('a:noFill'))
+    if noFill is None:
+        noFill = spPr.makeelement(qn('a:noFill'))
+        spPr.append(noFill)
+        
+    # For PlotArea
+    plotArea = chart._chartSpace.find(qn('c:plotArea'))
+    if plotArea is not None:
+        p_spPr = plotArea.find(qn('c:spPr'))
+        if p_spPr is None:
+            p_spPr = plotArea.makeelement(qn('c:spPr'))
+            plotArea.insert(0, p_spPr)
+        if p_noFill is None:
+            p_noFill = p_spPr.makeelement(qn('a:noFill'))
+            p_spPr.append(p_noFill)
+
+def make_overlay_invisible(chart):
+    from pptx.oxml.ns import qn
+    chart.has_title = True
+    if chart.chart_title:
+        chart.chart_title.has_text_frame = True
+        chart.chart_title.text_frame.text = ""
+    chart.value_axis.visible = False
+    chart.category_axis.visible = False
+    chart.value_axis.has_major_gridlines = False
+    chart.category_axis.has_major_gridlines = False
+    for ax in [chart.value_axis._element, chart.category_axis._element]:
+        tick = ax.find(qn('c:tickLblPos'))
+        if tick is not None: tick.set('val', 'none')
+        sp = ax.find(qn('c:spPr'))
+        if sp is not None: ax.remove(sp)
+        tx = ax.find(qn('c:txPr'))
+        if tx is not None: ax.remove(tx)
+
+def format_chart_axes(chart, fs=9):
+    chart.has_title = True
+    chart.chart_title.has_text_frame = True
+    chart.chart_title.text_frame.text = ""
+    
+    if chart.has_legend:
+        chart.legend.font.size = Pt(fs)
+        chart.legend.font.name = FONT_JP
+    if hasattr(chart, 'value_axis') and chart.value_axis:
+        chart.value_axis.tick_labels.font.size = Pt(fs)
+        chart.value_axis.tick_labels.font.name = FONT_JP
+    if hasattr(chart, 'category_axis') and chart.category_axis:
+        chart.category_axis.tick_labels.font.size = Pt(fs)
+        chart.category_axis.tick_labels.font.name = FONT_JP
+    for s in chart.series:
+        if hasattr(s, 'has_data_labels') and s.has_data_labels:
+            try:
+                s.data_labels.font.size = Pt(fs)
+                s.data_labels.font.name = FONT_JP
+            except Exception:
+                pass
+
+# ============================================================
+# P15: 広告基本指標 (Ads) 月次
+# ============================================================
+def build_p15_ads_monthly(slide, d):
+    slide_header(slide, "広告基本指標 (Ads)")
+    ads_m = d.get("ads_monthly", [])
+    if not ads_m:
+        add_text(slide, 0.35, 1.0, 5.0, 0.5, "データがありません", font_size=12, color=C_TEXT)
+        return
+
+    # Sort so oldest is first for charts, or newest first for table?
+    # Reference image shows oldest first (2025-9月, 10, 11, 12, 1) in table and charts.
+    ads_m = sorted(ads_m, key=lambda x: x["ym_raw"])
+
+    # --- テーブル ---
+    h = ["年月（日付）", "費用", "CV", "CPA", "クリック", "CPC", "CTR", "表示回数", "CVR"]
+    r = []
+    for m in ads_m:
+        r.append([
+            m["ym"],
+            f"{m.get('cost',0):,.2f}" if isinstance(m.get('cost'), float) else f"{m.get('cost',0):,}",
+            f"{m.get('cv',0):,.2f}",
+            f"{m.get('cpa',0):,.0f}" if m.get('cv',0) > 0 else "",
+            f"{m.get('clicks',0):,}",
+            f"{m.get('cpc',0):,.0f}",
+            f"{m.get('ctr',0):.2f}%" if m.get('ctr',0) > 2 else f"{m.get('ctr',0)*100:.2f}%" if m.get('ctr',0) < 1 else f"{m.get('ctr',0):.2f}%", 
+            f"{m.get('impressions',0):,}",
+            f"{m.get('cvr',0):.2f}%" if m.get('cvr',0) > 2 else f"{m.get('cvr',0)*100:.2f}%" if m.get('cvr',0) < 1 else f"{m.get('cvr',0):.2f}%"
+        ])
+    add_table(slide, 0.2, 0.6, 7.1, 1.0, h, r, fs=8)
+
+    categories = [m["ym"] for m in ads_m]
+
+    # --- 左側グラフ: コスト (Bar) ---
+    add_text(slide, 0.2, 2.2, 3.0, 0.3, "コスト (Ads)\nby Month", font_size=9, color=C_SUBTEXT)
+    cd_cost = ChartData()
+    cd_cost.categories = categories
+    cd_cost.add_series('Cost', [m.get("cost", 0) for m in ads_m])
+    chart_cost = slide.shapes.add_chart(
+        XL_CHART_TYPE.COLUMN_CLUSTERED, inch(0.2), inch(2.5), inch(3.4), inch(2.8), cd_cost
+    ).chart
+    chart_cost.has_legend = False
+    chart_cost.value_axis.has_major_gridlines = True
+    format_chart_axes(chart_cost, fs=8)
+    chart_cost.plots[0].has_data_labels = False
+    for s in chart_cost.series:
+        s.format.fill.solid()
+        s.format.fill.fore_color.rgb = rgb(179, 226, 131) # Light green from screenshot
+
+    # --- 右側グラフ: CV / CVR (Combo: CV=Bar, CVR=Line) ---
+    add_text(slide, 3.8, 2.2, 3.0, 0.3, "CV/CVR (Ads)\nby Month", font_size=9, color=C_SUBTEXT)
+    # Python-pptx doesn't natively support plotting on secondary axis easily without XML hacking.
+    # We will use the overlay method.
+    
+    # 1. Bar Chart (CV) on left axis
+    cd_cv = ChartData()
+    cd_cv.categories = categories
+    cd_cv.add_series('CV', [m.get("cv", 0) for m in ads_m])
+    chart_cv = slide.shapes.add_chart(
+        XL_CHART_TYPE.COLUMN_CLUSTERED, inch(3.8), inch(2.5), inch(3.4), inch(2.8), cd_cv
+    ).chart
+    chart_cv.has_legend = True
+    chart_cv.legend.position = XL_LEGEND_POSITION.BOTTOM
+    chart_cv.value_axis.has_major_gridlines = True
+    format_chart_axes(chart_cv, fs=8)
+    chart_cv.plots[0].has_data_labels = False
+    for s in chart_cv.series:
+        s.format.fill.solid()
+        s.format.fill.fore_color.rgb = rgb(179, 226, 131)
+
+    # 2. Line Chart (CVR) overlaid. Transparent background.
+    cd_cvr = ChartData()
+    cd_cvr.categories = categories
+    cd_cvr.add_series('CVR', [m.get("cvr", 0) for m in ads_m])
+    
+    chart_cvr_shape = slide.shapes.add_chart(
+        XL_CHART_TYPE.LINE, inch(3.8), inch(2.5), inch(3.4), inch(2.8), cd_cvr
+    )
+    chart_cvr = chart_cvr_shape.chart
+    chart_cvr.has_legend = True
+    chart_cvr.legend.position = XL_LEGEND_POSITION.RIGHT
+    chart_cvr.legend.font.size = Pt(8)
+    
+    make_chart_transparent(chart_cvr)
+    make_overlay_invisible(chart_cvr)
+    chart_cvr.plots[0].has_data_labels = False
+    
+    for s in chart_cvr.series:
+        s.format.line.color.rgb = rgb(105, 175, 230) # Light blue
+
+
+# ============================================================
+# P16: 広告基本指標_週次 (Ads)
+# ============================================================
+def build_p16_ads_weekly(slide, d):
+    slide_header(slide, "広告基本指標_週次 (Ads)")
+    ads_w = d.get("ads_weekly", [])
+    if not ads_w:
+        add_text(slide, 0.35, 1.0, 5.0, 0.5, "データがありません", font_size=12, color=C_TEXT)
+        return
+
+    ads_w = sorted(ads_w, key=lambda x: x["week"])
+    
+    h = ["週毎（日付）", "費用", "CV", "CPA", "クリック", "CPC", "CTR", "表示回数", "CVR"]
+    r = []
+    for m in ads_w:
+        r.append([
+            m["week"],
+            f"{m.get('cost',0):,.2f}" if isinstance(m.get('cost'), float) else f"{m.get('cost',0):,}",
+            f"{m.get('cv',0):,.2f}",
+            f"{m.get('cpa',0):,.0f}" if m.get('cv',0) > 0 else "",
+            f"{m.get('clicks',0):,}",
+            f"{m.get('cpc',0):,.0f}",
+            f"{m.get('ctr',0):.2f}%" if m.get('ctr',0) > 2 else f"{m.get('ctr',0)*100:.2f}%" if m.get('ctr',0) < 1 else f"{m.get('ctr',0):.2f}%",
+            f"{m.get('impressions',0):,}",
+            f"{m.get('cvr',0):.2f}%" if m.get('cvr',0) > 2 else f"{m.get('cvr',0)*100:.2f}%" if m.get('cvr',0) < 1 else f"{m.get('cvr',0):.2f}%"
+        ])
+    # Table heights might overflow if many weeks. Assume ~10 weeks.
+    add_table(slide, 0.2, 0.5, 7.1, 1.0, h, r, fs=6)
+
+    categories = [m["week"][-5:] for m in ads_w] # use short dates like MM-DD
+
+    # --- 左側グラフ: 表示回数-クリック数 (Click=Bar, Imp=Line overlay) ---
+    add_text(slide, 0.2, 3.2, 3.0, 0.2, "表示回数-クリック数 (Ads)", font_size=9, color=C_SUBTEXT)
+    
+    # Bar Chart (CT)
+    cd_ct = ChartData()
+    cd_ct.categories = categories
+    cd_ct.add_series('CT', [m.get("clicks", 0) for m in ads_w])
+    chart_ct = slide.shapes.add_chart(
+        XL_CHART_TYPE.COLUMN_CLUSTERED, inch(0.2), inch(3.4), inch(3.4), inch(2.0), cd_ct
+    ).chart
+    chart_ct.has_legend = True
+    chart_ct.legend.position = XL_LEGEND_POSITION.BOTTOM
+    format_chart_axes(chart_ct, fs=7)
+    chart_ct.plots[0].has_data_labels = False
+    for s in chart_ct.series:
+        s.format.fill.solid()
+        s.format.fill.fore_color.rgb = rgb(179, 226, 131)
+
+    # Line Chart (Imp)
+    cd_imp = ChartData()
+    cd_imp.categories = categories
+    cd_imp.add_series('Imp', [m.get("impressions", 0) for m in ads_w])
+    chart_imp_shape = slide.shapes.add_chart(
+        XL_CHART_TYPE.LINE, inch(0.2), inch(3.4), inch(3.4), inch(2.0), cd_imp
+    )
+    chart_imp = chart_imp_shape.chart
+    chart_imp.has_legend = True
+    chart_imp.legend.position = XL_LEGEND_POSITION.RIGHT
+    chart_imp.legend.font.size = Pt(7)
+    
+    make_chart_transparent(chart_imp)
+    make_overlay_invisible(chart_imp)
+    chart_imp.plots[0].has_data_labels = False
+    
+    for s in chart_imp.series:
+        s.format.line.color.rgb = rgb(105, 175, 230)
+
+    # --- 右側グラフ: CV-CPA (CPA=Bar, CV=Line overlay) ---
+    add_text(slide, 3.8, 3.2, 3.0, 0.2, "CV-CPA (Ads)", font_size=9, color=C_SUBTEXT)
+    
+    cd_cpa = ChartData()
+    cd_cpa.categories = categories
+    cd_cpa.add_series('CPA', [m.get("cpa", 0) for m in ads_w])
+    chart_cpa = slide.shapes.add_chart(
+        XL_CHART_TYPE.COLUMN_CLUSTERED, inch(3.8), inch(3.4), inch(3.4), inch(2.0), cd_cpa
+    ).chart
+    chart_cpa.has_legend = True
+    chart_cpa.legend.position = XL_LEGEND_POSITION.BOTTOM
+    format_chart_axes(chart_cpa, fs=7)
+    chart_cpa.plots[0].has_data_labels = False
+    for s in chart_cpa.series:
+        s.format.fill.solid()
+        s.format.fill.fore_color.rgb = rgb(179, 226, 131)
+
+    cd_cv = ChartData()
+    cd_cv.categories = categories
+    cd_cv.add_series('CV', [m.get("cv", 0) for m in ads_w])
+    chart_cv2_shape = slide.shapes.add_chart(
+        XL_CHART_TYPE.LINE, inch(3.8), inch(3.4), inch(3.4), inch(2.0), cd_cv
+    )
+    chart_cv2 = chart_cv2_shape.chart
+    chart_cv2.has_legend = True
+    chart_cv2.legend.position = XL_LEGEND_POSITION.RIGHT
+    chart_cv2.legend.font.size = Pt(7)
+    
+    make_chart_transparent(chart_cv2)
+    make_overlay_invisible(chart_cv2)
+    chart_cv2.plots[0].has_data_labels = False
+    
+    for s in chart_cv2.series:
+        s.format.line.color.rgb = rgb(105, 175, 230)
+
+
+# ============================================================
+# P17: キャンペーン指標推移 (Ads)
+# ============================================================
+def build_p17_ads_campaign(slide, d):
+    slide_header(slide, "キャンペーン指標推移（費用）")
+    ads_c = d.get("ads_campaigns", [])
+    if not ads_c:
+        add_text(slide, 0.35, 1.0, 5.0, 0.5, "データがありません", font_size=12, color=C_TEXT)
+        return
+
+    # To plot line chart, we need costs grouped by campaign over YM
+    cd = ChartData()
+    
+    # Get sorted distinct ym
+    ym_set = sorted(list(set(m["ym_raw"] for m in ads_c)))
+    cd.categories = ym_set
+    
+    # Group by campaign
+    camp_dict = {}
+    for m in ads_c:
+        cname = m["campaign"]
+        if cname not in camp_dict:
+            camp_dict[cname] = {ym: 0 for ym in ym_set}
+        camp_dict[cname][m["ym_raw"]] += float(m.get("cost", 0))
+    
+    # Add series for top N campaigns by total cost to avoid overly messy chart
+    top_camps = sorted(list(camp_dict.keys()), key=lambda c: sum(camp_dict[c].values()), reverse=True)[:5]
+    for c in top_camps:
+        cd.add_series(c, [camp_dict[c][ym] for ym in ym_set])
+
+    chart_costs = slide.shapes.add_chart(
+        XL_CHART_TYPE.LINE, inch(0.2), inch(0.5), inch(7.1), inch(2.6), cd
+    ).chart
+    chart_costs.has_legend = True
+    chart_costs.legend.position = XL_LEGEND_POSITION.BOTTOM
+    format_chart_axes(chart_costs, fs=8)
+    chart_costs.plots[0].has_data_labels = False
+
+    # --- 下部: キャンペーン別 最新月テーブル ---
+    add_text(slide, 0.2, 3.3, 4.0, 0.25, "広告基本指標_週次・キャンペーン (Ads)", font_size=9, color=C_SUBTEXT)
+    h = ["年月", "キャンペーン名", "費用", "CV", "CPA", "クリック", "CPC", "CTR", "表示回数", "CVR"]
+    r = []
+    
+    # Filter for the latest month in data
+    latest_ym = max(ym_set) if ym_set else ""
+    latest_camps = [m for m in ads_c if m["ym_raw"] == latest_ym]
+    
+    for m in latest_camps:
+        r.append([
+            m["ym"],
+            m["campaign"][:15] + ".." if len(m["campaign"]) > 15 else m["campaign"],  # truncate long names
+            f"{m.get('cost',0):,.2f}" if isinstance(m.get('cost'), float) else f"{m.get('cost',0):,}",
+            f"{m.get('cv',0):,.2f}",
+            f"{m.get('cpa',0):,.0f}" if m.get('cv',0) > 0 else "",
+            f"{m.get('clicks',0):,}",
+            f"{m.get('cpc',0):,.0f}",
+            f"{m.get('ctr',0):.2f}%" if m.get('ctr',0) > 2 else f"{m.get('ctr',0)*100:.2f}%" if m.get('ctr',0) < 1 else f"{m.get('ctr',0):.2f}%",
+            f"{m.get('impressions',0):,}",
+            f"{m.get('cvr',0):.2f}%" if m.get('cvr',0) > 2 else f"{m.get('cvr',0)*100:.2f}%" if m.get('cvr',0) < 1 else f"{m.get('cvr',0):.2f}%"
+        ])
+    add_table(slide, 0.2, 3.5, 7.1, 1.5, h, r, fs=7)
+
+
 # メイン
 # ============================================================
 def main():
@@ -708,6 +1031,15 @@ def main():
     print("P14 商圏内流入_前月 生成中...")
     build_area_slide(new_slide(), d, "area_traffic_2nd", "前月")
 
+    print("P15 広告基本指標(月次) 生成中...")
+    build_p15_ads_monthly(new_slide(), d)
+
+    print("P16 広告基本指標(週次) 生成中...")
+    build_p16_ads_weekly(new_slide(), d)
+
+    print("P17 キャンペーン指標推移 生成中...")
+    build_p17_ads_campaign(new_slide(), d)
+
     # テンプレートのSlide3（雛形）を最後に削除
     from pptx.oxml.ns import qn
     sldIdLst = prs.slides._sldIdLst
@@ -764,6 +1096,9 @@ def generate(data: dict, template_path: str, output_path: str):
     build_traffic_slide(new_slide(), d, "traffic_sources_2nd", "前月")
     build_area_slide(new_slide(), d, "area_traffic_1st", "当月")
     build_area_slide(new_slide(), d, "area_traffic_2nd", "前月")
+    build_p15_ads_monthly(new_slide(), d)
+    build_p16_ads_weekly(new_slide(), d)
+    build_p17_ads_campaign(new_slide(), d)
 
     # テンプレートのSlide3（雛形）を削除
     from pptx.oxml.ns import qn
